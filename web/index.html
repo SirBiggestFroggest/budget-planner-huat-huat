@@ -11,6 +11,9 @@
       The page talks to exactly two places: Google Fonts for the two typefaces,
       and your Supabase project for auth, data and realtime.
 
+      `frame-ancestors` is deliberately absent: browsers ignore it in a <meta>
+      tag and log an error. Set it as an HTTP header on your host instead.
+
       `connect-src` covers the default *.supabase.co hostnames plus the websocket
       realtime uses. If you put your project behind a custom domain, add that
       origin here too, or the browser will silently block every request to it.
@@ -24,8 +27,7 @@
                img-src 'self' data: https://lh3.googleusercontent.com;
                connect-src 'self' https://*.supabase.co wss://*.supabase.co;
                base-uri 'none';
-               form-action 'none';
-               frame-ancestors 'none'"
+               form-action 'none'"
     />
 
     <link rel="icon" type="image/png" href="./favicon.png" />
