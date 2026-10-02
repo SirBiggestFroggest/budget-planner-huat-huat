@@ -462,15 +462,28 @@
 
   /** The bundle's reducer already has an `import` case that swaps the whole
    *  ledger, which is exactly what adopting a remote copy needs. */
-  function applyState(next) {
+  /** Swap the whole ledger.
+   *
+   *  `fromRemote` matters more than it looks. The save effect calls back into
+   *  onState after every change, and onState is what schedules the push to
+   *  Supabase. Suppressing that is right when the new state just arrived FROM
+   *  the server — echoing it straight back is pointless — but it was being
+   *  suppressed for locally-made changes too. Editing your name, your
+   *  categories or your private list went into localStorage and never into the
+   *  database, so the next page load pulled the untouched remote copy and the
+   *  edit silently reverted.
+   */
+  function applyState(next, fromRemote) {
     if (!dispatch || !next) return;
-    applyingRemote = true;
+    if (fromRemote) {
+      applyingRemote = true;
+      // Cleared on a macrotask, after React has flushed the reducer and run the
+      // save effect that calls back into onState.
+      window.setTimeout(function () {
+        applyingRemote = false;
+      }, 0);
+    }
     dispatch({ t: 'import', state: next });
-    // Cleared on a macrotask, after React has flushed the reducer and run the
-    // save effect that calls back into onState.
-    window.setTimeout(function () {
-      applyingRemote = false;
-    }, 0);
   }
 
   // -------------------------------------------------------------------------
@@ -532,7 +545,7 @@
       var remoteIsNewer = !localChanged || remote.updatedAt > localChanged;
 
       if (remoteIsNewer) {
-        applyState(rehydrate(remote.state));
+        applyState(rehydrate(remote.state), true);
         writeMeta({ syncedAt: remote.updatedAt, localChangedAt: null });
         UI.status(reason === 'remote' ? 'Updated from your other device' : 'Ledger loaded');
       } else {
@@ -1005,7 +1018,7 @@
       await loadHousehold();
       if (!household || !latestState) return;
       var merged = await mergeHousehold(latestState);
-      applyState(merged);
+      applyState(merged, true);
       latestState = merged;
       watchHousehold();
       if (reason === 'remote') UI.status('Updated from your household');
@@ -1792,7 +1805,7 @@
       if (!adopted.session) {
         adopted.session = { memberId: ME, email: accountEmail(), name: meName(adopted) };
       }
-      applyState(adopted);
+      applyState(adopted, true);
       latestState = adopted;
       writeMeta({ syncedAt: remote.updatedAt, localChangedAt: null, accountId: user.id });
       UI.status('Ledger loaded');
