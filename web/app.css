@@ -291,3 +291,34 @@
     width: 100%;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Modals
+ * --------------------------------------------------------------------------
+ *
+ * The bundle already pins `.modal-foot` with position:sticky, so Done stays put
+ * while the body scrolls. The header was left to scroll away with the content —
+ * and the entry composer is tall enough that reaching the category list puts the
+ * title, the amount and the merchant out of sight. You end up looking at a wall
+ * of chips with no indication of what you are filling in.
+ *
+ * Making the head sticky too means the modal always says what it is, however far
+ * down you have scrolled. It mirrors the footer's existing treatment rather than
+ * inventing a new one.
+ */
+
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+  /* The bundle's 1px bottom border disappears against scrolled content; a soft
+     shade underneath makes the join read as an edge while the body moves. */
+  box-shadow: 0 6px 12px -8px rgba(23, 21, 15, 0.28);
+}
+
+/* The sticky footer sits over the body too, so give it the higher layer it
+   needs once the header is also claiming one. */
+.modal-foot {
+  z-index: 2;
+}
