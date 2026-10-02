@@ -1,0 +1,9 @@
+node_modules/
+
+# The retired Electron desktop build. Holds a REAL Google OAuth client secret in
+# electron/google-credentials.json — this must never reach a remote.
+_desktop-backup/
+
+# Local scratch
+*.log
+.DS_Store

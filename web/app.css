@@ -1,0 +1,210 @@
+/* Layered over the bundle's own stylesheet.
+ *
+ * The bundle's CSS is machine-generated from source we no longer have, so it is
+ * never edited directly — corrections live here instead, loaded after it.
+ *
+ * Most of this file fixes the narrow layout. The bundle collapses its sidebar
+ * at 900px by turning it into a flex row, but the <nav> inside carries an
+ * inline `display:grid`, which an ordinary rule cannot beat. The nav therefore
+ * stayed a tall vertical column sitting next to the logo, and everything marked
+ * `only-wide` — including the account block and sign-out — disappeared
+ * entirely. The result was unusable rather than merely cramped.
+ */
+
+/* --------------------------------------------------------------------------
+ * Logo
+ * -------------------------------------------------------------------------- */
+
+.hh-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The artwork is a cat's head on transparency; nudge it so the ears do not
+     kiss the top of the ring. */
+  transform: translateY(1px) scale(0.94);
+}
+
+/* --------------------------------------------------------------------------
+ * Sidebar extras
+ * -------------------------------------------------------------------------- */
+
+/* The foot holds share, the account block and the version line. It used to be
+   `only-wide`, i.e. hidden exactly when the window got small enough that you
+   most needed a way to reach them. */
+.sidebar-foot {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-account {
+  border-top: 1px solid var(--dark-line);
+  padding-top: 10px;
+  gap: 9px;
+}
+
+.sidebar-version {
+  font-size: 10px;
+  color: #6b6452;
+  padding: 0 6px;
+}
+
+/* --------------------------------------------------------------------------
+ * Narrow: the sidebar becomes a top bar
+ * -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  /* `minmax(0, 1fr)`, not `1fr`. A `1fr` track carries an automatic `min-content`
+   * floor, and this track's min-content is the sidebar — whose own min-content is
+   * the full width of all ten nav items laid end to end. The track therefore grew
+   * to ~1100px inside an 865px viewport, giving the page a horizontal scrollbar
+   * and pushing the account block off the right edge. Allowing the track to be
+   * narrower than its contents is what lets the nav scroll instead of pushing. */
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: auto;
+    overflow: visible;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 9px 14px;
+    border-bottom: 1px solid #2c2a1e;
+  }
+
+  /* Beat the inline `display:grid` the bundle sets on <nav>.
+   *
+   * `min-width: 0` is load-bearing. A flex item defaults to `min-width: auto`,
+   * which refuses to shrink below its content — so the ten nav items pushed the
+   * sidebar wider than the viewport, gave the whole page a horizontal scroll,
+   * and shoved the account block off the right-hand edge. `overflow-x: auto`
+   * alone does not help until the item is allowed to be narrower than what is
+   * inside it. */
+  .sidebar > nav {
+    display: flex !important;
+    order: 3;
+    flex: 1 0 100%;
+    min-width: 0;
+    gap: 3px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+    /* Fade the right edge so it reads as scrollable rather than clipped. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%);
+  }
+
+  .sidebar > nav .navitem {
+    width: auto;
+    flex: none;
+    padding: 6px 9px;
+    white-space: nowrap;
+  }
+
+  /* Logo block shrinks but stays legible. */
+  .sidebar > .row:first-child {
+    order: 1;
+    padding: 0 !important;
+    gap: 9px;
+  }
+
+  .sidebar > .row:first-child > div:first-child {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .sidebar > .row:first-child .serif {
+    font-size: 20px !important;
+  }
+
+  .sidebar > .row:first-child .eyebrow {
+    display: none;
+  }
+
+  /* Account and sign-out move to the right of the logo instead of vanishing. */
+  .sidebar-foot {
+    order: 2;
+    margin-left: auto;
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sidebar-account {
+    border-top: none;
+    padding-top: 0;
+    max-width: 46vw;
+  }
+
+  .sidebar-version,
+  .sidebar-share span:first-child {
+    display: none;
+  }
+
+  .sidebar-share {
+    width: auto !important;
+    padding: 6px 9px !important;
+  }
+
+  /* The member card and the spacer are genuinely surplus at this width. */
+  .sidebar .only-wide {
+    display: none !important;
+  }
+
+  /* --- top bar ---------------------------------------------------------- */
+
+  /* The sidebar is now the sticky bar at the top. The topbar is sticky too, at
+   * the same offset, so the two overlapped and the page title was clipped
+   * behind the nav. Only one of them can own `top: 0`; the topbar scrolls away
+   * instead, which also buys back vertical room on a phone. */
+  .topbar {
+    position: static;
+    padding: 12px 16px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* Title takes its own line; the controls sit together underneath, so the
+     month stepper and the lens switch stop being pushed onto separate rows. */
+  .topbar > div:first-child {
+    flex: 1 0 100%;
+  }
+
+  .topbar .spacer {
+    display: none;
+  }
+
+  .page {
+    padding: 16px 16px 60px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Phone
+ * -------------------------------------------------------------------------- */
+
+@media (max-width: 560px) {
+  .sidebar-account {
+    display: none;
+  }
+
+  .topbar .seg {
+    order: 3;
+  }
+
+  /* Multi-column dashboards get a single column rather than squeezing. */
+  .page .grid[style*='grid-template-columns'] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .modal,
+  .modal.wide {
+    width: 100%;
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "huat-huat",
+  "private": true,
+  "version": "1.1.0",
+  "description": "A manual, shared ledger for couples. Prosper together.",
+  "type": "module",
+  "scripts": {
+    "patch": "node tools/patch-renderer.mjs",
+    "build": "node tools/patch-renderer.mjs",
+    "dev": "node tools/patch-renderer.mjs && node tools/serve-web.mjs 5599"
+  }
+}

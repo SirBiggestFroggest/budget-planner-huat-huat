@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Huat Huat — a manual, shared ledger for couples." />
+    <meta name="theme-color" content="#EFE9DE" />
+    <title>Huat Huat · Prosper together</title>
+
+    <!--
+      The page talks to exactly two places: Google Fonts for the two typefaces,
+      and your Supabase project for auth, data and realtime.
+
+      `connect-src` covers the default *.supabase.co hostnames plus the websocket
+      realtime uses. If you put your project behind a custom domain, add that
+      origin here too, or the browser will silently block every request to it.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+               font-src https://fonts.gstatic.com;
+               img-src 'self' data: https://lh3.googleusercontent.com;
+               connect-src 'self' https://*.supabase.co wss://*.supabase.co;
+               base-uri 'none';
+               form-action 'none';
+               frame-ancestors 'none'"
+    />
+
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./huat-cat.png" />
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- The bundle's own stylesheet, then our corrections on top of it. -->
+    <link rel="stylesheet" href="./assets/index-DIOxbhdo.css" />
+    <link rel="stylesheet" href="./app.css" />
+
+    <!--
+      Load order matters and is deliberate. These four are classic scripts, so
+      they run to completion in order, before the module bundle at the bottom is
+      evaluated — which means window.__hh already exists by the time the
+      bundle's top-level constants are built.
+    -->
+    <script src="./config.js"></script>
+    <script src="./vendor/supabase.js"></script>
+    <script src="./ui.js"></script>
+    <script src="./bridge.js"></script>
+
+    <script type="module" crossorigin src="./assets/index-DceXRptG.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 40px; font: 400 15px/1.6 system-ui, sans-serif; color: #1b1915">
+        <h1 style="font-weight: 600">Huat Huat needs JavaScript</h1>
+        <p>This ledger runs entirely in your browser, so there is nothing to show without it.</p>
+      </div>
+    </noscript>
+  </body>
+</html>
