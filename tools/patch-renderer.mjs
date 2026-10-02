@@ -423,6 +423,23 @@ const edits = [
     with: 'amount:f.kind==="income"?Math.abs(f.amount):-Math.abs(f.amount),reviewed:!0',
   },
 
+  {
+    why: 'Money in offered the built-in Income group and nothing else',
+    // The composer filtered the group list down to the single group whose id is
+    // literally "income", so a group you created yourself could never hold a
+    // salary — picking Money in made it disappear from the list, and creating
+    // one while Money in was selected made it vanish the moment it was added.
+    //
+    // Income is decided by the sign now, so any group can legitimately hold it.
+    // Income still leads the list, with the rest following; money out is left
+    // exactly as it was.
+    find: 'oh=n.groups.filter(T=>u>0?T.id==="income":T.id!=="income")',
+    with:
+      'oh=u>0' +
+      '?n.groups.filter(T=>T.id==="income").concat(n.groups.filter(T=>T.id!=="income"))' +
+      ':n.groups.filter(T=>T.id!=="income")',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
