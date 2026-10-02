@@ -208,7 +208,8 @@
   /* These two sit beside the logo now, so they must not wrap onto three lines.
      The icon carries the meaning once the label is this tight. */
   .sidebar-share,
-  .sidebar-assistant {
+  .sidebar-assistant,
+  .sidebar-settings {
     width: auto !important;
     padding: 6px 8px !important;
     white-space: nowrap;
@@ -267,13 +268,15 @@
 
   /* Icon only: the words do not fit beside an avatar and two buttons. */
   .sidebar-share,
-  .sidebar-assistant {
+  .sidebar-assistant,
+  .sidebar-settings {
     font-size: 0 !important;
     padding: 6px !important;
   }
 
   .sidebar-share span,
-  .sidebar-assistant span {
+  .sidebar-assistant span,
+  .sidebar-settings span {
     font-size: 14px;
   }
 

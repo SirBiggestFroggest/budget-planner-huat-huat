@@ -830,7 +830,7 @@
       return null;
     }
 
-    var h = await sb.from('households').select('id,name').eq('id', id).maybeSingle();
+    var h = await sb.from('households').select('id,name,join_code,max_members').eq('id', id).maybeSingle();
     if (h.error) throw h.error;
     household = h.data || null;
 
@@ -852,7 +852,7 @@
     var created = await sb
       .from('households')
       .insert({ name: name || 'Our ledger', created_by: user.id })
-      .select('id,name')
+      .select('id,name,join_code,max_members')
       .single();
     if (created.error) throw created.error;
 
@@ -1757,6 +1757,128 @@
   }
 
   // -------------------------------------------------------------------------
+  // Join codes and ledger settings
+  // -------------------------------------------------------------------------
+
+  // No I, O, 0 or 1: these get read aloud and typed in by someone else, and
+  // those four are the pairs people mistake.
+  var CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  function newJoinCode() {
+    var out = '';
+    var bytes = new Uint8Array(6);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    for (var i = 0; i < 6; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+    return out;
+  }
+
+  function tidyCode(text) {
+    return String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  }
+
+  async function setJoinCode(code) {
+    if (!sb || !household) throw new Error('Create or join a ledger first.');
+    var res = await sb
+      .from('households')
+      .update({ join_code: code })
+      .eq('id', household.id)
+      .select('id,name,join_code,max_members')
+      .single();
+    if (res.error) throw res.error;
+    household = res.data;
+    return household;
+  }
+
+  async function setLedgerSettings(patch) {
+    if (!sb || !household) throw new Error('Create or join a ledger first.');
+    var res = await sb
+      .from('households')
+      .update(patch)
+      .eq('id', household.id)
+      .select('id,name,join_code,max_members')
+      .single();
+    if (res.error) throw res.error;
+    household = res.data;
+    return household;
+  }
+
+  /** Joining is a database function, not a table write. There is deliberately
+   *  no policy letting a stranger read `households`, because one would let
+   *  anybody walk the table and harvest every ledger's code. */
+  async function joinWithCode(code) {
+    if (!sb || !user) throw new Error('Sign in before joining a ledger.');
+    var clean = tidyCode(code);
+    if (clean.length !== 6) throw new Error('A join code is six characters.');
+
+    var res = await sb.rpc('join_household_with_code', { code: clean });
+    if (res.error) {
+      var m = res.error.message || '';
+      if (/does not match/i.test(m)) throw new Error('That code does not match any ledger.');
+      if (/full/i.test(m)) throw new Error('That ledger is already full.');
+      throw new Error(m || 'Could not join that ledger.');
+    }
+    await refreshHousehold();
+    return res.data;
+  }
+
+  function openSettings(appDispatch, state) {
+    if (appDispatch) dispatch = appDispatch;
+
+    if (!sb || !user) {
+      return UI.message(
+        'Sign in first',
+        'Ledger settings live with your account, so there is nothing to adjust until you have one.',
+        true,
+      );
+    }
+
+    UI.settings({
+      household: household,
+      memberCount: householdMembers.length,
+      myUserId: user.id,
+
+      onCreate: async function () {
+        await ensureHousehold();
+        var code = newJoinCode();
+        await setJoinCode(code);
+        await refreshHousehold();
+        return household;
+      },
+
+      onRegenerate: async function () {
+        var code = newJoinCode();
+        await setJoinCode(code);
+        return household;
+      },
+
+      onRevokeCode: async function () {
+        await setJoinCode(null);
+        return household;
+      },
+
+      onSave: async function (patch) {
+        // The cap cannot go below the people already in the ledger; the
+        // database would refuse the next join anyway, and a number that
+        // contradicts the member list is just confusing.
+        if (patch.max_members != null && patch.max_members < householdMembers.length) {
+          throw new Error(
+            'There are already ' + householdMembers.length + ' people here. Remove someone first.',
+          );
+        }
+        await setLedgerSettings(patch);
+        UI.status('Ledger settings saved');
+        return household;
+      },
+
+      onJoin: async function (code) {
+        await joinWithCode(code);
+        UI.status('Joined the ledger');
+        return household;
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
 
@@ -1916,6 +2038,7 @@
     openProfile: openProfile,
     openSharing: openSharing,
     openCategories: openCategories,
+    openSettings: openSettings,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 

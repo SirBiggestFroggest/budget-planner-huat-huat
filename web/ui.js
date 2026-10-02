@@ -998,6 +998,272 @@
     scrim().appendChild(box);
   }
 
+  // -------------------------------------------------------------------------
+  // Ledger settings
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {object} opts
+   *   household      {id,name,join_code,max_members} | null
+   *   memberCount    how many people are in it
+   *   onCreate()     -> Promise<household>
+   *   onRegenerate() -> Promise<household>
+   *   onRevokeCode() -> Promise<household>
+   *   onSave(patch)  -> Promise<household>
+   *   onJoin(code)   -> Promise<household>
+   */
+  function settings(opts) {
+    var house = opts.household;
+
+    var box = card(480);
+    box.appendChild(heading('Ledger settings', 25));
+
+    var error = el('div', 'font:400 12px ' + SANS + ';color:#A6412B;margin-top:10px');
+    error.style.display = 'none';
+    function fail(err) {
+      error.textContent = (err && err.message) || String(err);
+      error.style.display = 'block';
+    }
+    function clear() {
+      error.style.display = 'none';
+    }
+
+    var body = el('div', 'display:grid;gap:16px');
+
+    // --- nothing shared yet ---------------------------------------------------
+    if (!house) {
+      body.appendChild(
+        el(
+          'div',
+          'color:#57534A;font:400 13px/1.6 ' + SANS,
+          'You do not share a ledger yet. Create one to get a join code, or type the ' +
+            'code someone gave you.',
+        ),
+      );
+
+      var create = button('Create a shared ledger', 'primary');
+      create.style.justifySelf = 'start';
+      create.onclick = async function () {
+        clear();
+        create.disabled = true;
+        create.textContent = 'Creating…';
+        try {
+          var h = await opts.onCreate();
+          hide();
+          settings(Object.assign({}, opts, { household: h, memberCount: 1 }));
+        } catch (err) {
+          create.disabled = false;
+          create.textContent = 'Create a shared ledger';
+          fail(err);
+        }
+      };
+      body.appendChild(create);
+
+      var joinWrap = el('div', 'border-top:1px solid #E0D7C5;padding-top:14px;display:grid;gap:9px');
+      joinWrap.appendChild(label('Join with a code'));
+      var joinRow = el('div', 'display:flex;gap:8px');
+      var joinField = field('');
+      joinField.wrap.style.flex = '1';
+      joinField.input.placeholder = 'ABC123';
+      joinField.input.maxLength = 7;
+      joinField.input.style.letterSpacing = '2px';
+      joinField.input.style.textTransform = 'uppercase';
+      joinRow.appendChild(joinField.wrap);
+      var joinBtn = button('Join', 'primary');
+      joinBtn.onclick = async function () {
+        clear();
+        joinBtn.disabled = true;
+        joinBtn.textContent = 'Joining…';
+        try {
+          await opts.onJoin(joinField.input.value);
+          hide();
+        } catch (err) {
+          fail(err);
+          joinBtn.disabled = false;
+          joinBtn.textContent = 'Join';
+        }
+      };
+      joinRow.appendChild(joinBtn);
+      joinWrap.appendChild(joinRow);
+      body.appendChild(joinWrap);
+
+      box.appendChild(body);
+      box.appendChild(error);
+      var footA = el('div', 'display:flex;justify-content:flex-end;margin-top:16px');
+      var closeA = button('Close');
+      closeA.onclick = hide;
+      footA.appendChild(closeA);
+      box.appendChild(footA);
+      scrim().appendChild(box);
+      return;
+    }
+
+    // --- name -----------------------------------------------------------------
+    var name = field('Ledger name');
+    name.input.value = house.name || 'Our ledger';
+    name.input.maxLength = 50;
+    body.appendChild(name.wrap);
+
+    // --- join code ------------------------------------------------------------
+    var codeWrap = el('div', 'display:grid;gap:8px');
+    codeWrap.appendChild(label('Join code'));
+    codeWrap.appendChild(
+      el(
+        'div',
+        'font:400 11px/1.5 ' + SANS + ';color:#7A7468',
+        'Anyone with this code and an account can join, up to the limit below. ' +
+          'Read it out rather than emailing it.',
+      ),
+    );
+
+    var MONO = 'ui-monospace,SFMono-Regular,Menlo,monospace';
+    var codeRow = el('div', 'display:flex;gap:8px;align-items:center');
+    var codeBox = el(
+      'div',
+      'flex:1;border:1px solid #DDD4C2;background:#FDFBF7;border-radius:8px;padding:9px 12px;color:#1B1915',
+    );
+
+    function paintCode() {
+      if (house.join_code) {
+        codeBox.textContent = house.join_code;
+        codeBox.style.font = '600 19px/1.2 ' + MONO;
+        codeBox.style.letterSpacing = '4px';
+        codeBox.style.color = '#1B1915';
+      } else {
+        codeBox.textContent = 'No code — nobody can join';
+        codeBox.style.font = '400 13px ' + SANS;
+        codeBox.style.letterSpacing = 'normal';
+        codeBox.style.color = '#7A7468';
+      }
+      copy.disabled = !house.join_code;
+      revoke.disabled = !house.join_code;
+      regen.textContent = house.join_code ? 'New code' : 'Create a code';
+    }
+
+    codeRow.appendChild(codeBox);
+    var copy = button('Copy');
+    copy.onclick = function () {
+      if (!house.join_code) return;
+      try {
+        navigator.clipboard.writeText(house.join_code);
+        copy.textContent = 'Copied';
+        window.setTimeout(function () {
+          copy.textContent = 'Copy';
+        }, 1500);
+      } catch (e) {
+        /* clipboard can be blocked; the code is on screen anyway */
+      }
+    };
+    codeRow.appendChild(copy);
+    codeWrap.appendChild(codeRow);
+
+    var codeActions = el('div', 'display:flex;gap:7px');
+    var regen = button('New code');
+    regen.style.padding = '6px 11px';
+    regen.onclick = async function () {
+      clear();
+      regen.disabled = true;
+      try {
+        house = await opts.onRegenerate();
+        paintCode();
+      } catch (err) {
+        fail(err);
+      }
+      regen.disabled = false;
+    };
+    codeActions.appendChild(regen);
+
+    var revoke = button('Turn off', 'danger');
+    revoke.style.padding = '6px 11px';
+    revoke.onclick = async function () {
+      clear();
+      revoke.disabled = true;
+      try {
+        house = await opts.onRevokeCode();
+        paintCode();
+      } catch (err) {
+        fail(err);
+        revoke.disabled = false;
+      }
+    };
+    codeActions.appendChild(revoke);
+    codeWrap.appendChild(codeActions);
+    paintCode();
+    body.appendChild(codeWrap);
+
+    // --- the cap --------------------------------------------------------------
+    var capWrap = el('div', 'border-top:1px solid #E0D7C5;padding-top:14px;display:grid;gap:8px');
+    capWrap.appendChild(label('Most people allowed'));
+    capWrap.appendChild(
+      el(
+        'div',
+        'font:400 11px/1.5 ' + SANS + ';color:#7A7468',
+        'Enforced by the database, not just here — a join past this limit is refused even ' +
+          'if someone has the code. ' +
+          opts.memberCount +
+          (opts.memberCount === 1 ? ' person is' : ' people are') +
+          ' in this ledger now.',
+      ),
+    );
+
+    var cap = house.max_members || 2;
+    var capRow = el('div', 'display:flex;gap:7px;flex-wrap:wrap');
+    var capButtons = [];
+
+    function paintCap() {
+      capButtons.forEach(function (x) {
+        var on = x.n === cap;
+        x.node.style.background = on ? '#17150F' : '#EFE9DE';
+        x.node.style.color = on ? '#FDFBF7' : '#1B1915';
+        x.node.style.borderColor = on ? '#17150F' : '#D8CEB8';
+        // Below the current membership is not a number the database would
+        // accept, so it is not offered.
+        x.node.disabled = x.n < opts.memberCount;
+        x.node.style.opacity = x.node.disabled ? '0.4' : '1';
+      });
+    }
+
+    [2, 3, 4, 5, 6, 8, 10].forEach(function (n) {
+      var b = button(String(n));
+      b.style.padding = '6px 13px';
+      b.onclick = function () {
+        cap = n;
+        paintCap();
+      };
+      capButtons.push({ node: b, n: n });
+      capRow.appendChild(b);
+    });
+    paintCap();
+    capWrap.appendChild(capRow);
+    body.appendChild(capWrap);
+
+    box.appendChild(body);
+    box.appendChild(error);
+
+    var foot = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:18px');
+    var cancel = button('Close');
+    cancel.onclick = hide;
+    var save = button('Save', 'primary');
+    save.onclick = async function () {
+      clear();
+      save.disabled = true;
+      save.textContent = 'Saving…';
+      try {
+        await opts.onSave({ name: name.input.value.trim() || 'Our ledger', max_members: cap });
+        hide();
+      } catch (err) {
+        fail(err);
+        save.disabled = false;
+        save.textContent = 'Save';
+      }
+    };
+    foot.appendChild(cancel);
+    foot.appendChild(save);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+  }
+
   window.__hhUI = {
     status: status,
     message: message,
@@ -1005,6 +1271,7 @@
     sharing: sharing,
     assistant: assistant,
     categories: categories,
+    settings: settings,
     hide: hide,
   };
 })();

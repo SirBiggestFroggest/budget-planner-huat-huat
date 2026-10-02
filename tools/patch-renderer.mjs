@@ -304,6 +304,21 @@ const edits = [
       `l.jsx("button",{className:"btn sm danger",onClick:()=>${HH}.deleteSelected(s,A,i,j),children:"Delete"})]})`,
   },
 
+  {
+    why: 'Ledger-wide settings had no way in',
+    find:
+      'l.jsxs("button",{className:"navitem sidebar-assistant",' +
+      `onClick:()=>${HH}.openAssistant(i,t),children:[` +
+      'l.jsx("span",{style:{width:16,textAlign:"center"},children:"\u2726"}),"Ask about your money"]}),',
+    with:
+      'l.jsxs("button",{className:"navitem sidebar-assistant",' +
+      `onClick:()=>${HH}.openAssistant(i,t),children:[` +
+      'l.jsx("span",{style:{width:16,textAlign:"center"},children:"\u2726"}),"Ask about your money"]}),' +
+      'l.jsxs("button",{className:"navitem sidebar-settings",' +
+      `onClick:()=>${HH}.openSettings(i,t),children:[` +
+      'l.jsx("span",{style:{width:16,textAlign:"center"},children:"\u2699"}),"Ledger settings"]}),',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
