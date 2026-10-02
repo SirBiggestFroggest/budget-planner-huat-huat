@@ -142,14 +142,18 @@
     max-width: 46vw;
   }
 
-  .sidebar-version,
-  .sidebar-share span:first-child {
+  .sidebar-version {
     display: none;
   }
 
-  .sidebar-share {
+  /* These two sit beside the logo now, so they must not wrap onto three lines.
+     The icon carries the meaning once the label is this tight. */
+  .sidebar-share,
+  .sidebar-assistant {
     width: auto !important;
-    padding: 6px 9px !important;
+    padding: 6px 8px !important;
+    white-space: nowrap;
+    flex: none;
   }
 
   /* The member card and the spacer are genuinely surplus at this width. */
@@ -190,8 +194,28 @@
  * -------------------------------------------------------------------------- */
 
 @media (max-width: 560px) {
-  .sidebar-account {
+  /* Collapse the name and address, never the buttons. Hiding the whole account
+     row here removed the only way to sign out on a phone — the avatar still
+     says who is signed in, and Edit and Sign out stay reachable. */
+  .sidebar-who {
     display: none;
+  }
+
+  .sidebar-account {
+    max-width: none;
+    gap: 6px;
+  }
+
+  /* Icon only: the words do not fit beside an avatar and two buttons. */
+  .sidebar-share,
+  .sidebar-assistant {
+    font-size: 0 !important;
+    padding: 6px !important;
+  }
+
+  .sidebar-share span,
+  .sidebar-assistant span {
+    font-size: 14px;
   }
 
   .topbar .seg {

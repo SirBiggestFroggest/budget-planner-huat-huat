@@ -253,6 +253,11 @@ const edits = [
     with: 'l.jsxs("button",{className:"navitem sidebar-share",onClick:()=>a(!0),children:[',
   },
   {
+    why: 'The name/email block needs a handle so a phone can drop it without losing sign-out',
+    find: 'l.jsx(Fe,{member:x,size:28}),l.jsxs("div",{style:{minWidth:0,flex:1},children:[',
+    with: 'l.jsx(Fe,{member:x,size:28}),l.jsxs("div",{className:"sidebar-who",style:{minWidth:0,flex:1},children:[',
+  },
+  {
     why: 'Account row needs a handle, and its inline border belongs in the stylesheet',
     find:
       'x&&l.jsxs("div",{className:"row",style:{borderTop:"1px solid var(--dark-line)",paddingTop:10,gap:9},children:[',
