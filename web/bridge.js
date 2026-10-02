@@ -129,6 +129,9 @@
       ],
       checkins: [],
       session: null,
+      // Categories whose entries never leave this ledger. Empty by default:
+      // sharing is the norm in a joint book, privacy is the deliberate choice.
+      privateCategories: [],
       months: [month],
       today: todayISO(),
     };
@@ -148,6 +151,16 @@
 
     var month = thisMonth();
     var next = Object.assign({}, state, { today: todayISO() });
+
+    // Entries merged in from the household are not ours to keep. They are
+    // re-fetched every session, so a stored copy would double them on the next
+    // merge and, worse, write another person's spending into our ledger row.
+    if (Array.isArray(next.transactions)) {
+      next.transactions = next.transactions.filter(function (t) {
+        return !t || !t.fromShared;
+      });
+    }
+    if (!Array.isArray(next.privateCategories)) next.privateCategories = [];
 
     if (!Array.isArray(next.months) || next.months.indexOf(month) !== -1) return next;
     next.months = next.months.concat([month]).sort();
@@ -425,6 +438,7 @@
   var latestState = null;
   var dispatch = null;
   var pushTimer = null;
+  var sharedPushTimer = null;
   var applyingRemote = false;
   var started = false;
   var channel = null;
@@ -655,6 +669,7 @@
       }
     }
     unwatchRemote();
+    unwatchHousehold();
     if (sb) {
       try {
         await sb.auth.signOut();
@@ -695,6 +710,494 @@
   }
 
   // -------------------------------------------------------------------------
+  // Households: two accounts, one shared book
+  // -------------------------------------------------------------------------
+  //
+  // Each person keeps their own private ledger. A household is the overlap.
+  // Entries flow into it automatically, except those in categories their owner
+  // marked private — so the default is shared and privacy is the deliberate
+  // choice, which is the way round a joint book actually works.
+  //
+  // Shared entries are rows rather than a second document, so two people adding
+  // at the same moment cannot overwrite each other.
+
+  var household = null; // { id, name }
+  var householdMembers = []; // rows from household_members
+  var sharedChannel = null;
+
+  function isPrivateCategory(state, categoryId) {
+    if (!categoryId || !state) return false;
+    return (state.privateCategories || []).indexOf(categoryId) !== -1;
+  }
+
+  /** My transactions that are allowed into the shared book. */
+  function shareableTransactions(state) {
+    return (state.transactions || []).filter(function (t) {
+      return t && !t.fromShared && !isPrivateCategory(state, t.categoryId);
+    });
+  }
+
+  /** The other people in the household. */
+  function otherMembers() {
+    return householdMembers.filter(function (m) {
+      return !user || m.user_id !== user.id;
+    });
+  }
+
+  async function loadHousehold() {
+    if (!sb || !user) return null;
+
+    // Anything addressed to this email that nobody has claimed becomes ours.
+    // This is what lets an invitation exist before the person does.
+    try {
+      if (user.email) {
+        await sb
+          .from('household_members')
+          .update({ user_id: user.id, status: 'active' })
+          .is('user_id', null)
+          .ilike('email', user.email);
+      }
+    } catch (err) {
+      console.error('[household] claiming invites failed', err);
+    }
+
+    var mine = await sb.from('household_members').select('household_id').eq('user_id', user.id).limit(1);
+    if (mine.error) throw mine.error;
+
+    var id = mine.data && mine.data[0] && mine.data[0].household_id;
+    if (!id) {
+      household = null;
+      householdMembers = [];
+      return null;
+    }
+
+    var h = await sb.from('households').select('id,name').eq('id', id).maybeSingle();
+    if (h.error) throw h.error;
+    household = h.data || null;
+
+    var members = await sb
+      .from('household_members')
+      .select('id,user_id,email,display_name,color,status')
+      .eq('household_id', id);
+    if (members.error) throw members.error;
+    householdMembers = members.data || [];
+
+    return household;
+  }
+
+  /** Creates the household on first invite. The inviter is a member too. */
+  async function ensureHousehold(name) {
+    if (household) return household;
+    if (!sb || !user) throw new Error('Sign in first.');
+
+    var created = await sb
+      .from('households')
+      .insert({ name: name || 'Our ledger', created_by: user.id })
+      .select('id,name')
+      .single();
+    if (created.error) throw created.error;
+
+    var me = await sb.from('household_members').insert({
+      household_id: created.data.id,
+      user_id: user.id,
+      email: user.email,
+      display_name: meName(latestState || freshState()),
+      status: 'active',
+    });
+    if (me.error) throw me.error;
+
+    household = created.data;
+    await loadHousehold();
+    return household;
+  }
+
+  async function inviteMember(email, displayName) {
+    var address = String(email || '').trim().toLowerCase();
+    if (!address) throw new Error('Enter an email address.');
+    if (user && address === String(user.email || '').toLowerCase()) {
+      throw new Error('That is your own address.');
+    }
+
+    await ensureHousehold();
+    var res = await sb.from('household_members').insert({
+      household_id: household.id,
+      email: address,
+      display_name: displayName || address.split('@')[0],
+      color: '#B0542C',
+      status: 'invited',
+    });
+    // 23505 is a unique violation: already invited, which is not an error here.
+    if (res.error && res.error.code !== '23505') throw res.error;
+    await loadHousehold();
+  }
+
+  async function removeMember(memberRowId) {
+    var res = await sb.from('household_members').delete().eq('id', memberRowId);
+    if (res.error) throw res.error;
+    await loadHousehold();
+  }
+
+  // --- pushing our side ----------------------------------------------------
+
+  /** Mirrors our shareable entries into the household, and withdraws any that
+   *  no longer qualify — deleted, or moved into a private category. */
+  async function pushShared(state) {
+    if (!sb || !user || !household) return;
+
+    var mine = shareableTransactions(state);
+    var rows = mine.map(function (t) {
+      return { household_id: household.id, author_id: user.id, source_tx_id: t.id, tx: t };
+    });
+
+    if (rows.length) {
+      var up = await sb
+        .from('shared_entries')
+        .upsert(rows, { onConflict: 'household_id,author_id,source_tx_id' });
+      if (up.error) throw up.error;
+    }
+
+    // Withdraw anything of ours up there that is no longer shareable.
+    var existing = await sb
+      .from('shared_entries')
+      .select('source_tx_id')
+      .eq('household_id', household.id)
+      .eq('author_id', user.id);
+    if (existing.error) throw existing.error;
+
+    var keep = {};
+    mine.forEach(function (t) {
+      keep[t.id] = true;
+    });
+    var stale = (existing.data || [])
+      .map(function (r) {
+        return r.source_tx_id;
+      })
+      .filter(function (id) {
+        return !keep[id];
+      });
+
+    if (stale.length) {
+      var del = await sb
+        .from('shared_entries')
+        .delete()
+        .eq('household_id', household.id)
+        .eq('author_id', user.id)
+        .in('source_tx_id', stale);
+      if (del.error) throw del.error;
+    }
+  }
+
+  // --- pulling their side --------------------------------------------------
+
+  /** Entries other members shared, shaped as transactions attributed to the
+   *  partner slot. Marked `fromShared` so they are stripped before any save and
+   *  never mistaken for our own. */
+  async function pullShared() {
+    if (!sb || !user || !household) return [];
+
+    var res = await sb
+      .from('shared_entries')
+      .select('author_id,source_tx_id,tx')
+      .eq('household_id', household.id)
+      .neq('author_id', user.id);
+    if (res.error) throw res.error;
+
+    return (res.data || []).map(function (row) {
+      return Object.assign({}, row.tx, {
+        id: 'shared_' + String(row.author_id).slice(0, 8) + '_' + row.source_tx_id,
+        memberId: PARTNER,
+        enteredBy: PARTNER,
+        fromShared: true,
+        reviewed: true,
+      });
+    });
+  }
+
+  /** Folds the household into the ledger: the partner slot takes their name and
+   *  their shared entries join ours, so every existing screen shows both of you.
+   *  Nothing new had to be built for that — the app already attributes each
+   *  entry to a member. */
+  async function mergeHousehold(state) {
+    if (!household) return state;
+
+    var others = otherMembers();
+    var active = others.filter(function (m) {
+      return m.status === 'active';
+    });
+    var face = active[0] || others[0];
+    var next = state;
+
+    if (face) {
+      next = withPartner(next, {
+        name: face.display_name || String(face.email || 'Partner').split('@')[0],
+        email: face.email,
+        color: face.color || '#B0542C',
+      });
+    }
+
+    var theirs = [];
+    try {
+      theirs = await pullShared();
+    } catch (err) {
+      console.error('[household] could not read shared entries', err);
+    }
+
+    var ours = (next.transactions || []).filter(function (t) {
+      return !t.fromShared;
+    });
+
+    return Object.assign({}, next, {
+      transactions: ours.concat(theirs).sort(function (a, b) {
+        return a.date < b.date ? 1 : -1;
+      }),
+    });
+  }
+
+  async function refreshHousehold(reason) {
+    if (!sb || !user) return;
+    try {
+      await loadHousehold();
+      if (!household || !latestState) return;
+      var merged = await mergeHousehold(latestState);
+      applyState(merged);
+      latestState = merged;
+      watchHousehold();
+      if (reason === 'remote') UI.status('Updated from your household');
+    } catch (err) {
+      console.error('[household] refresh failed', err);
+    }
+  }
+
+  function watchHousehold() {
+    if (!sb || !user || !household || sharedChannel) return;
+    sharedChannel = sb
+      .channel('household:' + household.id)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shared_entries', filter: 'household_id=eq.' + household.id },
+        function (payload) {
+          var row = payload.new || payload.old || {};
+          if (row.author_id === user.id) return; // our own write echoing back
+          refreshHousehold('remote');
+        },
+      )
+      .subscribe();
+  }
+
+  function unwatchHousehold() {
+    if (sharedChannel && sb) {
+      try {
+        sb.removeChannel(sharedChannel);
+      } catch (e) {
+        /* already gone */
+      }
+    }
+    sharedChannel = null;
+    household = null;
+    householdMembers = [];
+  }
+
+  // -------------------------------------------------------------------------
+  // The assistant
+  // -------------------------------------------------------------------------
+
+  /** Calls the Edge Function. The Gemini key lives there, never here: it is a
+   *  real secret with no row level security behind it, so a page holding it
+   *  would hand it to anyone who opened View Source. */
+  async function askAssistant(body) {
+    if (!sb) throw new Error('Sign in to use the assistant.');
+    var res = await sb.functions.invoke('assistant', { body: body });
+    if (res.error) throw new Error(res.error.message || 'The assistant could not be reached.');
+    if (res.data && res.data.error) throw new Error(res.data.message || res.data.error);
+    return res.data;
+  }
+
+  /** A compact digest — never the whole ledger. Private categories are stripped
+   *  here too, so they are not merely hidden from the household: they never
+   *  reach the model either. */
+  function digest(state, month) {
+    var m = month || thisMonth();
+    var visible = (state.transactions || []).filter(function (t) {
+      return (
+        t &&
+        typeof t.date === 'string' &&
+        t.date.slice(0, 7) === m &&
+        !isPrivateCategory(state, t.categoryId)
+      );
+    });
+
+    var labelOf = {};
+    (state.categories || []).forEach(function (c) {
+      labelOf[c.id] = c.label;
+    });
+
+    var byCategory = {};
+    var byMember = {};
+    var income = 0;
+
+    visible.forEach(function (t) {
+      var who =
+        t.memberId === PARTNER ? partnerName(state) : t.memberId === JOINT ? 'Joint' : meName(state);
+      if (t.amount > 0) {
+        income += t.amount;
+      } else {
+        var label = labelOf[t.categoryId] || 'Uncategorised';
+        byCategory[label] = (byCategory[label] || 0) + Math.abs(t.amount);
+        byMember[who] = (byMember[who] || 0) + Math.abs(t.amount);
+      }
+    });
+
+    var planned = {};
+    var budget = (state.budgets || []).filter(function (b) {
+      return b.month === m;
+    })[0];
+    if (budget) {
+      (budget.lines || []).forEach(function (line) {
+        planned[line.label] = line.planned;
+      });
+    }
+
+    var round = function (n) {
+      return Math.round(n * 100) / 100;
+    };
+
+    return {
+      month: m,
+      entries: visible.length,
+      income: round(income),
+      byMember: byMember,
+      byCategory: Object.keys(byCategory).map(function (label) {
+        return { label: label, spent: round(byCategory[label]), planned: planned[label] };
+      }),
+    };
+  }
+
+  function uncategorised(state) {
+    return (state.transactions || []).filter(function (t) {
+      return t && !t.fromShared && !t.categoryId && t.amount < 0;
+    });
+  }
+
+  /** Categorises everything still unsorted. Only the category id comes back,
+   *  and it is accepted only if it is one we actually offered — the model does
+   *  not get to invent a category, or write anything else into the entry. */
+  async function categoriseAll(appDispatch, onProgress) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState;
+    if (!state) return { done: 0, seen: 0 };
+
+    var todo = uncategorised(state).slice(0, 25);
+    if (!todo.length) return { done: 0, seen: 0 };
+
+    var groupOf = {};
+    (state.groups || []).forEach(function (g) {
+      groupOf[g.id] = g.label;
+    });
+    var categories = (state.categories || []).map(function (c) {
+      return { id: c.id, label: c.label, group: groupOf[c.groupId] };
+    });
+
+    var valid = {};
+    categories.forEach(function (c) {
+      valid[c.id] = true;
+    });
+
+    var applied = 0;
+    for (var i = 0; i < todo.length; i++) {
+      var t = todo[i];
+      if (onProgress) onProgress(i + 1, todo.length);
+      var out = await askAssistant({
+        task: 'categorise',
+        merchant: t.merchant,
+        amount: t.amount,
+        categories: categories,
+      });
+      var picked = out && out.result && out.result.categoryId;
+      if (picked && valid[picked]) {
+        dispatch({ t: 'updateTx', id: t.id, patch: { categoryId: picked } });
+        applied++;
+      }
+    }
+
+    return { done: applied, seen: todo.length };
+  }
+
+  // -------------------------------------------------------------------------
+  // Panels
+  // -------------------------------------------------------------------------
+
+  function openSharing(appDispatch, state) {
+    if (appDispatch) dispatch = appDispatch;
+    var current = state || latestState || freshState();
+
+    if (!sb || !user) {
+      return UI.message(
+        'Sign in first',
+        'Sharing a ledger needs an account, so the other person has something to join.',
+        true,
+      );
+    }
+
+    var groupOf = {};
+    (current.groups || []).forEach(function (g) {
+      groupOf[g.id] = g.label;
+    });
+
+    UI.sharing({
+      members: householdMembers,
+      myUserId: user.id,
+      categories: (current.categories || []).map(function (c) {
+        return { id: c.id, label: c.label, group: groupOf[c.groupId] };
+      }),
+      privateCategories: current.privateCategories || [],
+
+      onInvite: async function (email) {
+        await inviteMember(email);
+        UI.status('Invited ' + email);
+        await refreshHousehold();
+        return householdMembers;
+      },
+
+      onRemove: async function (rowId) {
+        await removeMember(rowId);
+        await refreshHousehold();
+        return householdMembers;
+      },
+
+      onSavePrivate: function (ids) {
+        var next = Object.assign({}, latestState || current, { privateCategories: ids });
+        applyState(next);
+        latestState = next;
+        UI.status(ids.length ? ids.length + ' categories kept private' : 'Everything is shared');
+        // Withdraw anything that just became private.
+        pushShared(next).catch(function (err) {
+          console.error('[household] withdrawing private entries failed', err);
+        });
+      },
+    });
+  }
+
+  function openAssistant(appDispatch, state) {
+    if (appDispatch) dispatch = appDispatch;
+    var current = state || latestState || freshState();
+
+    UI.assistant({
+      unsorted: uncategorised(current).length,
+      onAsk: async function (question) {
+        var out = await askAssistant({ task: 'ask', question: question, summary: digest(latestState || current) });
+        return out.text;
+      },
+      onSummarise: async function () {
+        var out = await askAssistant({ task: 'summarise', summary: digest(latestState || current) });
+        return out.text;
+      },
+      onCategorise: function (progress) {
+        return categoriseAll(dispatch, progress);
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
 
@@ -714,6 +1217,16 @@
     if (sb && user) {
       writeMeta({ localChangedAt: new Date().toISOString() });
       schedulePush();
+      // Mirror into the household on the same debounce as the personal ledger,
+      // so the two never drift apart.
+      if (household) {
+        window.clearTimeout(sharedPushTimer);
+        sharedPushTimer = window.setTimeout(function () {
+          pushShared(latestState).catch(function (err) {
+            console.error('[household] push failed', err);
+          });
+        }, PUSH_DEBOUNCE);
+      }
     }
   }
 
@@ -751,6 +1264,21 @@
     }
 
     watchRemote();
+
+    // Join whatever household this account belongs to, claiming any invitation
+    // addressed to their email, then fold it into what they see.
+    try {
+      await loadHousehold();
+      if (household) {
+        var merged = await mergeHousehold(latestState || freshState());
+        applyState(merged);
+        latestState = merged;
+        watchHousehold();
+        await pushShared(merged);
+      }
+    } catch (err) {
+      console.error('[household] setup failed', err);
+    }
   }
 
   async function start() {
@@ -826,6 +1354,8 @@
     localSignIn: localSignIn,
     signOut: signOut,
     openProfile: openProfile,
+    openSharing: openSharing,
+    openAssistant: openAssistant,
 
     // asset path, so the patched bundle does not hardcode it
     logo: './huat-cat.png',

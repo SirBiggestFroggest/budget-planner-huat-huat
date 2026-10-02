@@ -341,5 +341,335 @@
     name.input.focus();
   }
 
-  window.__hhUI = { status: status, message: message, profile: profile, hide: hide };
+  // -------------------------------------------------------------------------
+  // Sharing: who is in the household, and what stays private
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {object} opts
+   *   members            household_members rows
+   *   myUserId           so "you" can be labelled, and not offered a Remove
+   *   categories         [{id,label,group}]
+   *   privateCategories  [id]
+   *   onInvite(email)    -> Promise<members>
+   *   onRemove(rowId)    -> Promise<members>
+   *   onSavePrivate(ids)
+   */
+  function sharing(opts) {
+    var box = card(480);
+    box.appendChild(heading('Share this ledger', 25));
+    box.appendChild(
+      el(
+        'div',
+        'color:#57534A;margin-bottom:18px',
+        'Your partner signs in with their own account and keeps their own ledger. ' +
+          'What you each log flows into this shared book, apart from anything in a private category.',
+      ),
+    );
+
+    var error = el('div', 'font:400 12px ' + SANS + ';color:#A6412B;margin-top:10px');
+    error.style.display = 'none';
+
+    function showError(err) {
+      error.textContent = (err && err.message) || String(err);
+      error.style.display = 'block';
+    }
+    function clearError() {
+      error.style.display = 'none';
+    }
+
+    // --- people -------------------------------------------------------------
+    var people = el('div', 'display:grid;gap:12px');
+    people.appendChild(label('People'));
+
+    var list = el('div', 'display:grid;gap:6px');
+    var members = opts.members || [];
+
+    function paintList() {
+      list.innerHTML = '';
+      if (!members.length) {
+        list.appendChild(
+          el('div', 'font:400 12px ' + SANS + ';color:#7A7468', 'Nobody else yet — invite someone below.'),
+        );
+        return;
+      }
+      members.forEach(function (m) {
+        var row = el(
+          'div',
+          'display:flex;align-items:center;gap:10px;border:1px solid #E8E1D2;border-radius:9px;padding:8px 10px',
+        );
+        var isMe = m.user_id && m.user_id === opts.myUserId;
+        var name = m.display_name || String(m.email || '').split('@')[0];
+
+        row.appendChild(
+          el(
+            'span',
+            'width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;' +
+              'color:#fff;font:600 11px ' + SANS + ';background:' + (m.color || '#4F6E9A'),
+            (name[0] || '?').toUpperCase(),
+          ),
+        );
+
+        var who = el('div', 'min-width:0;flex:1');
+        who.appendChild(el('div', 'font:600 13px ' + SANS + ';color:#1B1915', name + (isMe ? ' (you)' : '')));
+        who.appendChild(
+          el(
+            'div',
+            'font:400 11px ' + SANS + ';color:#7A7468;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
+            m.email + (m.status === 'invited' ? ' · invited, not joined yet' : ''),
+          ),
+        );
+        row.appendChild(who);
+
+        if (!isMe) {
+          var rm = button('Remove', 'danger');
+          rm.style.padding = '5px 10px';
+          rm.onclick = async function () {
+            rm.disabled = true;
+            rm.textContent = '…';
+            try {
+              members = (await opts.onRemove(m.id)) || [];
+              paintList();
+            } catch (err) {
+              rm.disabled = false;
+              rm.textContent = 'Remove';
+              showError(err);
+            }
+          };
+          row.appendChild(rm);
+        }
+        list.appendChild(row);
+      });
+    }
+    paintList();
+    people.appendChild(list);
+
+    // --- invite -------------------------------------------------------------
+    var inviteRow = el('div', 'display:flex;gap:8px;align-items:flex-start');
+    var invite = field('');
+    invite.wrap.style.flex = '1';
+    invite.input.type = 'email';
+    invite.input.placeholder = 'their@email.com';
+    inviteRow.appendChild(invite.wrap);
+
+    var send = button('Invite', 'primary');
+    send.onclick = async function () {
+      var address = invite.input.value.trim();
+      if (!address) return showError(new Error('Enter their email address.'));
+      send.disabled = true;
+      send.textContent = 'Inviting…';
+      try {
+        members = (await opts.onInvite(address)) || members;
+        invite.input.value = '';
+        paintList();
+        clearError();
+      } catch (err) {
+        showError(err);
+      }
+      send.disabled = false;
+      send.textContent = 'Invite';
+    };
+    inviteRow.appendChild(send);
+    people.appendChild(inviteRow);
+
+    people.appendChild(
+      el(
+        'div',
+        'font:400 11px/1.45 ' + SANS + ';color:#7A7468',
+        'They will not see anything until they sign in with that address themselves.',
+      ),
+    );
+    box.appendChild(people);
+
+    // --- private categories -------------------------------------------------
+    var priv = el('div', 'border-top:1px solid #E0D7C5;margin-top:16px;padding-top:14px;display:grid;gap:10px');
+    priv.appendChild(label('Keep private'));
+    priv.appendChild(
+      el(
+        'div',
+        'font:400 11px/1.45 ' + SANS + ';color:#7A7468',
+        'Everything is shared unless you tick it here. Entries in a ticked category stay in your ledger ' +
+          'alone — they are not sent to the household, and the assistant never sees them either.',
+      ),
+    );
+
+    var chosen = {};
+    (opts.privateCategories || []).forEach(function (id) {
+      chosen[id] = true;
+    });
+
+    var grid = el(
+      'div',
+      'display:grid;gap:4px;max-height:190px;overflow:auto;border:1px solid #E8E1D2;border-radius:9px;padding:8px',
+    );
+
+    var lastGroup = null;
+    (opts.categories || []).forEach(function (c) {
+      if (c.group && c.group !== lastGroup) {
+        lastGroup = c.group;
+        grid.appendChild(
+          el(
+            'div',
+            'font:600 10px ' + SANS + ';letter-spacing:.6px;text-transform:uppercase;color:#9A9282;padding:6px 2px 2px',
+            c.group,
+          ),
+        );
+      }
+      var line = el('label', 'display:flex;align-items:center;gap:8px;padding:3px 2px;cursor:pointer');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!chosen[c.id];
+      cb.onchange = function () {
+        if (cb.checked) chosen[c.id] = true;
+        else delete chosen[c.id];
+      };
+      line.appendChild(cb);
+      line.appendChild(el('span', 'font:400 13px ' + SANS + ';color:#1B1915', c.label));
+      grid.appendChild(line);
+    });
+
+    priv.appendChild(grid);
+    box.appendChild(priv);
+    box.appendChild(error);
+
+    var foot = el('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px');
+    var close = button('Close');
+    close.onclick = hide;
+    var save = button('Save', 'primary');
+    save.onclick = function () {
+      hide();
+      opts.onSavePrivate(Object.keys(chosen));
+    };
+    foot.appendChild(close);
+    foot.appendChild(save);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+  }
+
+  // -------------------------------------------------------------------------
+  // The assistant
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {object} opts
+   *   unsorted               count of uncategorised entries
+   *   onAsk(question)        -> Promise<string>
+   *   onSummarise()          -> Promise<string>
+   *   onCategorise(progress) -> Promise<{done, seen}>
+   */
+  function assistant(opts) {
+    var box = card(520);
+    box.appendChild(heading('Ask about your money', 25));
+    box.appendChild(
+      el(
+        'div',
+        'color:#57534A;margin-bottom:16px',
+        'It reads a summary of this month, never your whole ledger, and never anything you marked private.',
+      ),
+    );
+
+    var out = el(
+      'div',
+      'min-height:88px;max-height:300px;overflow:auto;border:1px solid #E8E1D2;border-radius:10px;' +
+        'padding:14px;background:#FDFBF7;font:400 14px/1.65 ' + SANS + ';color:#1B1915;white-space:pre-wrap',
+    );
+    out.textContent = 'Ask a question, or use one of the buttons below.';
+    box.appendChild(out);
+
+    function busy(text) {
+      out.style.color = '#7A7468';
+      out.textContent = text;
+    }
+    function answer(text) {
+      out.style.color = '#1B1915';
+      out.textContent = text;
+    }
+    function failed(err) {
+      out.style.color = '#A6412B';
+      out.textContent = (err && err.message) || String(err);
+    }
+
+    // --- ask ----------------------------------------------------------------
+    var askRow = el('div', 'display:flex;gap:8px;margin-top:12px;align-items:flex-start');
+    var q = field('');
+    q.wrap.style.flex = '1';
+    q.input.placeholder = 'e.g. what did we spend on eating out?';
+    askRow.appendChild(q.wrap);
+
+    var go = button('Ask', 'primary');
+    async function doAsk() {
+      var question = q.input.value.trim();
+      if (!question) return;
+      go.disabled = true;
+      busy('Thinking…');
+      try {
+        answer(await opts.onAsk(question));
+      } catch (err) {
+        failed(err);
+      }
+      go.disabled = false;
+    }
+    go.onclick = doAsk;
+    q.input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') doAsk();
+    });
+    askRow.appendChild(go);
+    box.appendChild(askRow);
+
+    // --- the other two ------------------------------------------------------
+    var tools = el('div', 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap');
+
+    var sum = button('Summarise this month');
+    sum.onclick = async function () {
+      sum.disabled = true;
+      busy('Reading the month…');
+      try {
+        answer(await opts.onSummarise());
+      } catch (err) {
+        failed(err);
+      }
+      sum.disabled = false;
+    };
+    tools.appendChild(sum);
+
+    var cat = button(opts.unsorted ? 'Sort ' + opts.unsorted + ' uncategorised' : 'Nothing to sort');
+    cat.disabled = !opts.unsorted;
+    cat.onclick = async function () {
+      cat.disabled = true;
+      busy('Sorting…');
+      try {
+        var res = await opts.onCategorise(function (done, total) {
+          busy('Sorting ' + done + ' of ' + total + '…');
+        });
+        answer(
+          res.done
+            ? 'Categorised ' + res.done + ' of ' + res.seen + ' entries. Check them on the Transactions screen.'
+            : 'Nothing could be matched confidently — they are still waiting for you.',
+        );
+      } catch (err) {
+        failed(err);
+      }
+    };
+    tools.appendChild(cat);
+    box.appendChild(tools);
+
+    var foot = el('div', 'display:flex;justify-content:flex-end;margin-top:16px');
+    var close = button('Close');
+    close.onclick = hide;
+    foot.appendChild(close);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+    q.input.focus();
+  }
+
+  window.__hhUI = {
+    status: status,
+    message: message,
+    profile: profile,
+    sharing: sharing,
+    assistant: assistant,
+    hide: hide,
+  };
 })();

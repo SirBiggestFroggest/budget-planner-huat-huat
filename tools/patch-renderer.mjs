@@ -259,6 +259,22 @@ const edits = [
     with: 'x&&l.jsxs("div",{className:"row sidebar-account",children:[',
   },
 
+  // --- entry points for sharing and the assistant -------------------------
+  {
+    why: "The prototype's share modal was a mock whose invite link went nowhere",
+    find: 'l.jsxs("button",{className:"navitem sidebar-share",onClick:()=>a(!0),children:[',
+    with: `l.jsxs("button",{className:"navitem sidebar-share",onClick:()=>${HH}.openSharing(i,t),children:[`,
+  },
+  {
+    why: 'Give the assistant a way in, beside sharing',
+    find: '"Share this ledger"]}),',
+    with:
+      '"Share this ledger"]}),' +
+      'l.jsxs("button",{className:"navitem sidebar-assistant",' +
+      `onClick:()=>${HH}.openAssistant(i,t),children:[` +
+      'l.jsx("span",{style:{width:16,textAlign:"center"},children:"✦"}),"Ask about your money"]}),',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
