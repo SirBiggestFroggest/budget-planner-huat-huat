@@ -319,6 +319,17 @@ const edits = [
       'l.jsx("span",{style:{width:16,textAlign:"center"},children:"\u2699"}),"Ledger settings"]}),',
   },
 
+  {
+    why: 'Recurring items could be created and deleted, never corrected',
+    find:
+      'A?l.jsx("span",{className:"hint",children:"logged \u2713"}):' +
+      'l.jsx("button",{className:"btn sm",onClick:()=>m(g.id),children:"Mark paid"}),',
+    with:
+      'A?l.jsx("span",{className:"hint",children:"logged \u2713"}):' +
+      'l.jsx("button",{className:"btn sm",onClick:()=>m(g.id),children:"Mark paid"}),' +
+      `l.jsx("button",{className:"btn ghost sm",title:"Edit",onClick:()=>${HH}.openRecurring(r,g),children:"Edit"}),`,
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

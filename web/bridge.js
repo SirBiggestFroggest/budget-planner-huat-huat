@@ -1776,6 +1776,21 @@
     return String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
   }
 
+  /** The join code and member cap live in columns added by a later version of
+   *  schema.sql. If that has not been run, Postgres answers with
+   *  "column households.join_code does not exist" — true, but useless to
+   *  somebody who does not know a migration is outstanding. */
+  function schemaError(err) {
+    var m = (err && err.message) || '';
+    if (/join_code|max_members|does not exist|schema cache|PGRST202|42703/i.test(m)) {
+      return new Error(
+        'Your database is missing the latest schema. Run supabase/schema.sql in the ' +
+          'Supabase SQL editor, then try again.',
+      );
+    }
+    return err;
+  }
+
   async function setJoinCode(code) {
     if (!sb || !household) throw new Error('Create or join a ledger first.');
     var res = await sb
@@ -1784,7 +1799,7 @@
       .eq('id', household.id)
       .select('id,name,join_code,max_members')
       .single();
-    if (res.error) throw res.error;
+    if (res.error) throw schemaError(res.error);
     household = res.data;
     return household;
   }
@@ -1797,7 +1812,7 @@
       .eq('id', household.id)
       .select('id,name,join_code,max_members')
       .single();
-    if (res.error) throw res.error;
+    if (res.error) throw schemaError(res.error);
     household = res.data;
     return household;
   }
@@ -1815,7 +1830,7 @@
       var m = res.error.message || '';
       if (/does not match/i.test(m)) throw new Error('That code does not match any ledger.');
       if (/full/i.test(m)) throw new Error('That ledger is already full.');
-      throw new Error(m || 'Could not join that ledger.');
+      throw schemaError(res.error);
     }
     await refreshHousehold();
     return res.data;
@@ -1874,6 +1889,52 @@
         await joinWithCode(code);
         UI.status('Joined the ledger');
         return household;
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Recurring items
+  // -------------------------------------------------------------------------
+
+  var CADENCES = ['Monthly', 'Every 2 weeks', 'Quarterly', 'Yearly'];
+
+  /** The reducer has always had updateRecurring; nothing in the UI called it,
+   *  so a repeating item could be created and deleted but never corrected. */
+  function openRecurring(appDispatch, item) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState || freshState();
+    if (!item) return;
+
+    var groupOf = {};
+    (state.groups || []).forEach(function (g) {
+      groupOf[g.id] = g.label;
+    });
+
+    UI.recurring({
+      item: item,
+      cadences: CADENCES,
+      categories: (state.categories || []).map(function (c) {
+        return { id: c.id, label: c.label, group: groupOf[c.groupId] };
+      }),
+      accounts: (state.accounts || []).map(function (a) {
+        return { id: a.id, label: a.label };
+      }),
+      members: (state.members || []).map(function (m) {
+        return { id: m.id, name: m.name };
+      }),
+      onSave: function (patch) {
+        dispatch({ t: 'updateRecurring', id: item.id, patch: patch });
+        UI.status(patch.label + ' updated');
+      },
+      onDelete: function () {
+        UI.message('Remove this repeating item?', 'It stops appearing in what is still to come.', true, {
+          label: 'Remove',
+          onClick: function () {
+            dispatch({ t: 'deleteRecurring', id: item.id });
+            UI.status((item.label || 'Item') + ' removed');
+          },
+        });
       },
     });
   }
@@ -2039,6 +2100,7 @@
     openSharing: openSharing,
     openCategories: openCategories,
     openSettings: openSettings,
+    openRecurring: openRecurring,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 

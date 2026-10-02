@@ -1264,6 +1264,215 @@
     scrim().appendChild(box);
   }
 
+  // -------------------------------------------------------------------------
+  // Editing a recurring item
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {object} opts
+   *   item        {label, amount, day, cadence, categoryId, accountId, memberId, kind}
+   *   cadences    [string]
+   *   categories  [{id,label,group}]
+   *   accounts    [{id,label}]
+   *   members     [{id,name}]
+   *   onSave(patch)
+   *   onDelete()
+   */
+  function recurring(opts) {
+    var it = opts.item || {};
+
+    var box = card(470);
+    box.style.maxHeight = 'min(86vh, 820px)';
+    box.style.display = 'grid';
+    box.style.gridTemplateRows = 'auto 1fr auto auto';
+
+    box.appendChild(heading('Edit repeating item', 24));
+
+    var body = el('div', 'display:grid;gap:13px;overflow-y:auto;padding-right:4px;align-content:start');
+
+    var name = field('What it is');
+    name.input.value = String(it.label || '').split(' — ')[0];
+    name.input.maxLength = 60;
+    body.appendChild(name.wrap);
+
+    var amount = field('Amount each time', 'A positive figure — the direction is set below.');
+    amount.input.value = Math.abs(Number(it.amount) || 0);
+    amount.input.inputMode = 'decimal';
+    body.appendChild(amount.wrap);
+
+    // --- money in or out ------------------------------------------------------
+    var kind = it.kind === 'income' ? 'income' : 'bill';
+    var kindWrap = el('div', 'display:grid;gap:6px');
+    kindWrap.appendChild(label('Direction'));
+    var kindRow = el('div', 'display:flex;gap:7px');
+    var kindBtns = [];
+
+    function paintKind() {
+      kindBtns.forEach(function (x) {
+        var on = x.v === kind;
+        x.node.style.background = on ? '#17150F' : '#EFE9DE';
+        x.node.style.color = on ? '#FDFBF7' : '#1B1915';
+        x.node.style.borderColor = on ? '#17150F' : '#D8CEB8';
+      });
+    }
+
+    [['bill', 'Money out'], ['income', 'Money in']].forEach(function (pair) {
+      var b = button(pair[1]);
+      b.style.padding = '6px 13px';
+      b.onclick = function () {
+        kind = pair[0];
+        paintKind();
+      };
+      kindBtns.push({ node: b, v: pair[0] });
+      kindRow.appendChild(b);
+    });
+    paintKind();
+    kindWrap.appendChild(kindRow);
+    body.appendChild(kindWrap);
+
+    var day = field('Day of the month', 'Between 1 and 31.');
+    day.input.value = Number(it.day) || 1;
+    day.input.inputMode = 'numeric';
+    body.appendChild(day.wrap);
+
+    function picker(labelText, options, current, onPick) {
+      var wrap = el('div', 'display:grid;gap:6px');
+      wrap.appendChild(label(labelText));
+      var sel = el(
+        'select',
+        'border:1px solid #DDD4C2;background:#FDFBF7;border-radius:8px;padding:8px 10px;' +
+          'font:400 13px ' + SANS + ';width:100%;color:#1B1915',
+      );
+      options.forEach(function (o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (String(o.value) === String(current)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.onchange = function () {
+        onPick(sel.value);
+      };
+      wrap.appendChild(sel);
+      return wrap;
+    }
+
+    var cadence = it.cadence || 'Monthly';
+    body.appendChild(
+      picker(
+        'How often',
+        (opts.cadences || ['Monthly']).map(function (c) {
+          return { value: c, label: c };
+        }),
+        cadence,
+        function (v) {
+          cadence = v;
+        },
+      ),
+    );
+
+    var categoryId = it.categoryId || '';
+    body.appendChild(
+      picker(
+        'Category',
+        [{ value: '', label: 'Uncategorised' }].concat(
+          (opts.categories || []).map(function (c) {
+            return { value: c.id, label: c.group ? c.group + ' · ' + c.label : c.label };
+          }),
+        ),
+        categoryId,
+        function (v) {
+          categoryId = v;
+        },
+      ),
+    );
+
+    var accountId = it.accountId || '';
+    body.appendChild(
+      picker(
+        'Account',
+        [{ value: '', label: 'No account' }].concat(
+          (opts.accounts || []).map(function (a) {
+            return { value: a.id, label: a.label };
+          }),
+        ),
+        accountId,
+        function (v) {
+          accountId = v;
+        },
+      ),
+    );
+
+    var memberId = it.memberId || '';
+    body.appendChild(
+      picker(
+        'Whose',
+        (opts.members || []).map(function (m) {
+          return { value: m.id, label: m.name };
+        }),
+        memberId,
+        function (v) {
+          memberId = v;
+        },
+      ),
+    );
+
+    box.appendChild(body);
+
+    var error = el('div', 'font:400 12px ' + SANS + ';color:#A6412B;margin-top:10px');
+    error.style.display = 'none';
+    box.appendChild(error);
+
+    function fail(text, input) {
+      error.textContent = text;
+      error.style.display = 'block';
+      if (input) input.focus();
+    }
+
+    var foot = el('div', 'display:flex;gap:8px;align-items:center;margin-top:16px');
+
+    var del = button('Delete', 'danger');
+    del.onclick = function () {
+      hide();
+      opts.onDelete();
+    };
+    foot.appendChild(del);
+    foot.appendChild(el('div', 'flex:1'));
+
+    var cancel = button('Cancel');
+    cancel.onclick = hide;
+    var save = button('Save', 'primary');
+    save.onclick = function () {
+      var text = name.input.value.trim();
+      var value = Number(String(amount.input.value).replace(/[^0-9.]/g, ''));
+      var dayNum = Math.round(Number(day.input.value));
+
+      if (!text) return fail('Give it a name.', name.input);
+      if (!isFinite(value) || value <= 0) return fail('The amount needs to be a number above zero.', amount.input);
+      if (!isFinite(dayNum) || dayNum < 1 || dayNum > 31) return fail('The day has to be between 1 and 31.', day.input);
+
+      hide();
+      opts.onSave({
+        label: text,
+        // Stored signed, decided by the direction buttons — so a stray minus
+        // typed into the amount box cannot contradict them.
+        amount: kind === 'income' ? Math.abs(value) : -Math.abs(value),
+        day: dayNum,
+        cadence: cadence,
+        categoryId: categoryId || null,
+        accountId: accountId || null,
+        memberId: memberId || null,
+        kind: kind,
+      });
+    };
+    foot.appendChild(cancel);
+    foot.appendChild(save);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+    name.input.focus();
+  }
+
   window.__hhUI = {
     status: status,
     message: message,
@@ -1272,6 +1481,7 @@
     assistant: assistant,
     categories: categories,
     settings: settings,
+    recurring: recurring,
     hide: hide,
   };
 })();
