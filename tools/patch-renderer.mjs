@@ -292,6 +292,18 @@ const edits = [
       'l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})]})',
   },
 
+  {
+    why: 'The reducer always supported deleteTx; nothing in the UI ever called it',
+    find:
+      'l.jsx("button",{className:"btn sm teal",onClick:()=>{s({t:"setReviewed",ids:A,reviewed:!0}),' +
+      'i(`${A.length} marked reviewed`),j({})},children:"Mark reviewed"})',
+    with:
+      'l.jsxs(l.Fragment,{children:[' +
+      'l.jsx("button",{className:"btn sm teal",onClick:()=>{s({t:"setReviewed",ids:A,reviewed:!0}),' +
+      'i(`${A.length} marked reviewed`),j({})},children:"Mark reviewed"}),' +
+      `l.jsx("button",{className:"btn sm danger",onClick:()=>${HH}.deleteSelected(s,A,i,j),children:"Delete"})]})`,
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

@@ -1652,6 +1652,98 @@
   }
 
   // -------------------------------------------------------------------------
+  // Deleting entries
+  // -------------------------------------------------------------------------
+
+  /** Bulk delete from the selection bar. The reducer has always supported
+   *  deleteTx; nothing in the UI ever called it. */
+  function deleteSelected(appDispatch, ids, toast, clearSelection) {
+    if (appDispatch) dispatch = appDispatch;
+    var list = (ids || []).slice();
+    if (!list.length) return;
+
+    UI.message(
+      list.length === 1 ? 'Delete this entry?' : 'Delete ' + list.length + ' entries?',
+      'This cannot be undone. Anything shared with your household is withdrawn too.',
+      true,
+      {
+        label: 'Delete',
+        onClick: function () {
+          list.forEach(function (id) {
+            dispatch({ t: 'deleteTx', id: id });
+          });
+          if (clearSelection) clearSelection({});
+          if (toast) toast(list.length + (list.length === 1 ? ' entry deleted' : ' entries deleted'));
+          // Withdraw them from the shared book as well, so a deleted entry does
+          // not live on in the other person's view.
+          if (household) {
+            window.setTimeout(function () {
+              pushShared(latestState).catch(function (err) {
+                console.error('[household] withdrawing deleted entries failed', err);
+              });
+            }, 0);
+          }
+        },
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Keeping the modal overlay on the viewport
+  // -------------------------------------------------------------------------
+  //
+  // The bundle's `.scrim` is position:fixed, which should always resolve
+  // against the window. On one machine it was reported resolving against the
+  // main column instead — the modal centred in the content area, with the
+  // sidebar and header left undimmed. That happens when some ancestor creates
+  // a containing block (a transform, filter, or contain), and it could not be
+  // reproduced here across several widths and both pages.
+  //
+  // Rather than keep guessing, this measures the overlay once it appears and,
+  // if it is not covering the window, compensates by the offset. Harmless when
+  // everything is already correct, which is the case in every browser tested.
+
+  function pinOverlay(scrim) {
+    var r = scrim.getBoundingClientRect();
+    var offByLeft = Math.abs(r.left) > 1;
+    var offByTop = Math.abs(r.top) > 1;
+    var tooNarrow = r.width < window.innerWidth - 2;
+    var tooShort = r.height < window.innerHeight - 2;
+    if (!offByLeft && !offByTop && !tooNarrow && !tooShort) return;
+
+    console.warn('[huat] modal overlay was not covering the window; correcting', {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    });
+
+    scrim.style.left = -r.left + 'px';
+    scrim.style.top = -r.top + 'px';
+    scrim.style.right = 'auto';
+    scrim.style.bottom = 'auto';
+    scrim.style.width = '100vw';
+    scrim.style.height = '100vh';
+  }
+
+  function watchOverlays() {
+    if (!window.MutationObserver) return;
+    new MutationObserver(function (records) {
+      records.forEach(function (rec) {
+        Array.prototype.forEach.call(rec.addedNodes, function (node) {
+          if (node.nodeType !== 1) return;
+          if (node.classList && node.classList.contains('scrim')) {
+            // After layout, not during the mutation.
+            window.requestAnimationFrame(function () {
+              pinOverlay(node);
+            });
+          }
+        });
+      });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
 
@@ -1736,6 +1828,7 @@
   }
 
   async function start() {
+    watchOverlays();
     console.info('[huat] boot ' + versionLabel() + ' · supabase ' + (sb ? 'configured' : 'NOT configured'));
     if (!sb) {
       UI.status('No account — saved in this browser');
@@ -1810,6 +1903,7 @@
     openProfile: openProfile,
     openSharing: openSharing,
     openCategories: openCategories,
+    deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 
     // asset path, so the patched bundle does not hardcode it
