@@ -376,6 +376,31 @@ const edits = [
       '${u>0?"in":"out"}${_.trim()?" \u2014 note sent":""}`))',
   },
 
+  {
+    why: 'Income in a new category group counted as neither income nor expense',
+    // The sign decides, not the category. Requiring the group id to be literally
+    // "income" meant a positive amount filed anywhere else — a group you made
+    // yourself, or no category at all — was income to nobody: excluded from
+    // income by this test, and from expenses by needing a negative amount. It
+    // vanished from Cash Flow while still sitting in the ledger.
+    //
+    // The expense test is left alone deliberately. Money out is already decided
+    // by its own sign, and widening it here would start counting refunds posted
+    // against an income category as spending.
+    find: 'const Jd=(e,t)=>t.amount>0&&Zn(e,t.categoryId)==="income"',
+    with: 'const Jd=(e,t)=>t.amount>0',
+  },
+
+  {
+    why: '"Log it" on a repeating item always wrote it as money out',
+    // This card's Log button negated the amount unconditionally, so a repeating
+    // salary logged from the dashboard landed in the ledger as spending. The
+    // recurring page's own logger already reads `kind`; this one was simply
+    // written before money-in was a thing a repeating item could be.
+    find: 'amount:-Math.abs(f.amount),reviewed:!0',
+    with: 'amount:f.kind==="income"?Math.abs(f.amount):-Math.abs(f.amount),reviewed:!0',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
