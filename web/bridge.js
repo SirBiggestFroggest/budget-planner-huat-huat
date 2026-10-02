@@ -1836,13 +1836,35 @@
     return res.data;
   }
 
-  function openSettings(appDispatch, state) {
+  /** Asks the database whether the join-code columns exist yet.
+   *
+   *  Checked before the panel opens rather than when a write fails. Finding out
+   *  by pressing a button and getting a Postgres column error is a poor way to
+   *  learn a migration is outstanding — and the empty panel looks identical
+   *  whether you have simply not made a ledger or the schema is behind.
+   */
+  async function schemaReady() {
+    if (!sb) return false;
+    var res = await sb.from('households').select('id,join_code,max_members').limit(1);
+    return !res.error;
+  }
+
+  async function openSettings(appDispatch, state) {
     if (appDispatch) dispatch = appDispatch;
 
     if (!sb || !user) {
       return UI.message(
         'Sign in first',
         'Ledger settings live with your account, so there is nothing to adjust until you have one.',
+        true,
+      );
+    }
+
+    if (!(await schemaReady())) {
+      return UI.message(
+        'Database needs one more step',
+        'Join codes and the people limit live in tables your project does not have yet. ' +
+          'Open the Supabase SQL editor, run supabase/02-join-codes.sql, then come back.',
         true,
       );
     }
