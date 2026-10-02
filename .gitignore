@@ -7,3 +7,9 @@ _desktop-backup/
 # Local scratch
 *.log
 .DS_Store
+
+# Supabase CLI local state. Secrets live in the dashboard, never here.
+supabase/.temp/
+supabase/.branches/
+.env
+.env.local
