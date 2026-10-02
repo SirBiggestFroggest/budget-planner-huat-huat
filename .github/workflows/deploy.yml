@@ -40,6 +40,11 @@ jobs:
             exit 1
           fi
 
+      - name: Cache-bust the asset links
+        # Pages serves max-age=600, so without this a returning browser keeps
+        # the old stylesheet and bundle for ten minutes after a deploy.
+        run: node tools/stamp-assets.mjs "${GITHUB_SHA::8}"
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
