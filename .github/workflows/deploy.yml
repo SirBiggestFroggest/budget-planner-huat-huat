@@ -1,0 +1,57 @@
+name: Deploy to GitHub Pages
+
+# The site is static, so there is nothing to compile. The one build step
+# regenerates web/assets/ from vendor/ via tools/patch-renderer.mjs, which also
+# re-asserts that all 34 bundle edits still apply — so a broken patch fails the
+# deploy rather than shipping a half-patched bundle.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Regenerate the renderer bundle
+        run: node tools/patch-renderer.mjs
+
+      - name: Fail if the site has no Supabase config
+        run: |
+          if grep -q "YOUR_PROJECT_URL\|YOUR_ANON_KEY" web/config.js; then
+            echo "web/config.js still holds placeholders — the deployed site would have no backend."
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
