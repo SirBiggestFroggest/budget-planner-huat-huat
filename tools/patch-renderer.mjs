@@ -341,6 +341,41 @@ const edits = [
     with: 'E.useEffect(()=>{var u;s!==null&&((u=o.current)==null||u.select())},[s===null])',
   },
 
+  {
+    why: 'A salary had to be typed twice: once as an entry, once as a repeating item',
+    // The checkbox is deliberately uncontrolled — no `checked` prop. The
+    // composer is React's and not ours to add state to, and a flag kept on our
+    // side would outlive a cancelled entry and quietly repeat the next one.
+    // The DOM holds it, and it is unmounted with the form.
+    find:
+      'l.jsxs("label",{className:"row",style:{gap:8,cursor:"pointer"},children:[' +
+      'l.jsx("input",{type:"checkbox",checked:X,onChange:T=>ae(T.target.checked)}),' +
+      'l.jsx("span",{className:"note",children:"Flex money \u2014 no-questions spend. ' +
+      'It counts against the allowance and never reaches the shared review queue."})]})',
+    with:
+      'l.jsxs(l.Fragment,{children:[' +
+      'l.jsxs("label",{className:"row",style:{gap:8,cursor:"pointer"},children:[' +
+      'l.jsx("input",{type:"checkbox",checked:X,onChange:T=>ae(T.target.checked)}),' +
+      'l.jsx("span",{className:"note",children:"Flex money \u2014 no-questions spend. ' +
+      'It counts against the allowance and never reaches the shared review queue."})]}),' +
+      'l.jsxs("label",{className:"row",style:{gap:8,cursor:"pointer"},children:[' +
+      'l.jsx("input",{type:"checkbox","data-hh-repeat":"1"}),' +
+      'l.jsx("span",{className:"note",children:u>0?"This repeats \u2014 a salary or regular income. ' +
+      'Adds it to Recurring on this day each month.":"This repeats \u2014 rent, a bill or a subscription. ' +
+      'Adds it to Recurring on this day each month."})]})]})',
+  },
+  {
+    why: 'Saving an entry marked as repeating must also create the repeating item',
+    find:
+      'enteredBy:a,flex:X}}),s(`${d.trim()} \u00b7 ${tt(Math.abs(gn))} ' +
+      '${u>0?"in":"out"}${_.trim()?" \u2014 note sent":""}`))',
+    with:
+      'enteredBy:a,flex:X}}),' +
+      `${HH}.maybeRepeat(r,{label:d.trim(),amount:gn,categoryId:g,accountId:N,memberId:v,date:S}),` +
+      's(`${d.trim()} \u00b7 ${tt(Math.abs(gn))} ' +
+      '${u>0?"in":"out"}${_.trim()?" \u2014 note sent":""}`))',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

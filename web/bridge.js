@@ -1962,6 +1962,58 @@
   }
 
   // -------------------------------------------------------------------------
+  // "This repeats" on a one-off entry
+  // -------------------------------------------------------------------------
+  //
+  // The composer has always had a recurring mode, but only reachable from the
+  // Recurring page. Logging a salary meant typing it twice: once as the entry,
+  // once as the repeating item. A tick box on the entry form does both.
+  //
+  // The box is read from the DOM at save time rather than held in a variable
+  // here. The composer is React's, so it is not ours to add state to — and a
+  // flag of our own would survive a cancelled entry and quietly repeat the
+  // next one. The checkbox is unmounted with the form, so it cannot go stale.
+
+  function repeatRequested() {
+    var box = document.querySelector('input[data-hh-repeat]');
+    return !!(box && box.checked);
+  }
+
+  /** Called after the composer saves a one-off entry. */
+  function maybeRepeat(appDispatch, entry) {
+    if (appDispatch) dispatch = appDispatch;
+    if (!repeatRequested() || !entry) return;
+
+    var amount = Number(entry.amount) || 0;
+    if (!amount) return;
+
+    // Day of the month the entry happened on; that is when it will repeat.
+    var day = 1;
+    var m = /^\d{4}-\d{2}-(\d{2})$/.exec(String(entry.date || ''));
+    if (m) day = Math.min(31, Math.max(1, parseInt(m[1], 10)));
+
+    dispatch({
+      t: 'addRecurring',
+      rec: {
+        label: entry.label || 'Repeating item',
+        day: day,
+        amount: Math.abs(amount),
+        accountId: entry.accountId || null,
+        memberId: entry.memberId || null,
+        cadence: 'Monthly',
+        categoryId: entry.categoryId || null,
+        remindLead: 3,
+        remindOn: true,
+        kind: amount > 0 ? 'income' : 'bill',
+      },
+    });
+
+    UI.status(
+      (entry.label || 'It') + ' will repeat monthly on the ' + day + ' — edit it under Recurring',
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
 
@@ -2123,6 +2175,7 @@
     openCategories: openCategories,
     openSettings: openSettings,
     openRecurring: openRecurring,
+    maybeRepeat: maybeRepeat,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 
