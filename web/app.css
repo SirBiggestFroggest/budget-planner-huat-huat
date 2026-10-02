@@ -71,6 +71,44 @@
 }
 
 /* --------------------------------------------------------------------------
+ * Wide: the sidebar is pinned
+ * --------------------------------------------------------------------------
+ *
+ * The bundle uses `position: sticky`, which drifts here: scrolling 151px moved
+ * the sidebar from top:0 to top:-10. Sticky positions against the nearest
+ * scrolling ancestor and is sensitive to the height of its grid area, so an
+ * element exactly as tall as the viewport does not reliably hold still.
+ *
+ * `fixed` is unambiguous. Taking it out of flow does not disturb the layout,
+ * because the grid's first column is a fixed 236px track and stays that width
+ * whether or not anything occupies it — so the column reserves the space and
+ * the fixed sidebar sits exactly over it.
+ */
+
+@media (min-width: 901px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 236px;
+    height: 100vh;
+    /* dvh accounts for mobile browser chrome that comes and goes; the vh above
+       stays as the fallback for anything that does not know dvh. */
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Taking the sidebar out of flow leaves `.main` as the only grid item, and it
+     auto-placed itself into the FIRST column — sliding under the fixed sidebar.
+     Naming the column keeps it where it belongs; the empty first track still
+     reserves the 236px. */
+  .main {
+    grid-column: 2;
+  }
+}
+
+/* --------------------------------------------------------------------------
  * Narrow: the sidebar becomes a top bar
  * -------------------------------------------------------------------------- */
 
