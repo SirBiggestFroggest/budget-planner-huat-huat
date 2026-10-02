@@ -440,6 +440,25 @@ const edits = [
       ':n.groups.filter(T=>T.id!=="income")',
   },
 
+  {
+    why: 'A repeating salary was saved, confirmed by a toast, then never listed',
+    // Ticking "This repeats" on money in stored the item correctly with
+    // kind:"income" and said so — but the Recurring page built its list from a
+    // helper that filtered income out, so the row never appeared. The toast
+    // pointed you at a page that would not show you the thing it had just made.
+    //
+    // Only this list changes. The four other income exclusions are outflow
+    // maths — the monthly bill total, reminder states, "leaving your accounts
+    // in the next 14 days" and safe-to-spend — and a salary must stay out of
+    // all of them or it reads as money going out.
+    //
+    // Share and ordering move to absolute value. Mixing a positive salary into
+    // a sum of negative bills otherwise produces negative percentages and sorts
+    // the largest bill last.
+    find: 'function vm(e,t,n){const r=e.recurring.filter(i=>i.kind!=="income").filter(i=>n==="all"||i.memberId===n),s=r.reduce((i,o)=>i+zn(o),0)||1;return r.map(i=>({rec:i,primary:t==="month"?zn(i):Nu(i),secondary:t==="month"?Nu(i):zn(i),share:zn(i)/s})).sort((i,o)=>o.primary-i.primary).map((i,o)=>({...i,rank:o+1}))}',
+    with: 'function vm(e,t,n){const r=e.recurring.filter(i=>n==="all"||i.memberId===n),s=r.reduce((i,o)=>i+Math.abs(zn(o)),0)||1;return r.map(i=>({rec:i,primary:t==="month"?zn(i):Nu(i),secondary:t==="month"?Nu(i):zn(i),share:Math.abs(zn(i))/s})).sort((i,o)=>Math.abs(o.primary)-Math.abs(i.primary)).map((i,o)=>({...i,rank:o+1}))}',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
