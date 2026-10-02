@@ -32,15 +32,36 @@
 /* The foot holds share, the account block and the version line. It used to be
    `only-wide`, i.e. hidden exactly when the window got small enough that you
    most needed a way to reach them. */
+/* `min-width: 0` on both, for the third time in this stylesheet and the same
+   reason each time: a flex or grid item defaults to `min-width: auto`, which
+   refuses to shrink below its content. The account row's content — avatar, a
+   long email, Edit, Sign out — measured 283px inside a 236px sidebar, so Sign
+   out rendered 61px past the right edge where it could not be clicked. It
+   looked exactly like a broken button. */
 .sidebar-foot {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .sidebar-account {
   border-top: 1px solid var(--dark-line);
   padding-top: 10px;
   gap: 9px;
+  min-width: 0;
+  /* And if a name is long enough to squeeze them anyway, the buttons drop to
+     their own line rather than off the edge. */
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.sidebar-account .sidebar-who {
+  flex: 1 1 60px;
+  min-width: 0;
+}
+
+.sidebar-account .btn {
+  flex: none;
 }
 
 .sidebar-version {
