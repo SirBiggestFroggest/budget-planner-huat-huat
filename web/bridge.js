@@ -657,30 +657,76 @@
     UI.status('Saved in this browser only');
   }
 
+  var signingOut = false;
+
+  /** Signing out clears the screen first and tidies up afterwards.
+   *
+   *  It used to flush the ledger and revoke the session *before* telling the UI
+   *  anything, which meant two network round trips stood between the click and
+   *  any visible response. try/catch does not help there: it catches a
+   *  rejection, not a request that simply hangs. On a slow or unreachable
+   *  connection the button was indistinguishable from broken.
+   *
+   *  So the session is dropped immediately, and the flush and revoke happen
+   *  behind it under a timeout. The worst case is now a ledger that syncs on
+   *  next sign-in, rather than somebody stuck on a screen they asked to leave.
+   */
   async function signOut(appDispatch) {
     if (appDispatch) dispatch = appDispatch;
-    window.clearTimeout(pushTimer);
+    if (signingOut) return;
+    signingOut = true;
 
-    if (sb && user && latestState) {
-      try {
-        await push(latestState); // flush before the session goes away
-      } catch (e) {
-        /* leaving matters more than the last write */
-      }
-    }
+    window.clearTimeout(pushTimer);
+    window.clearTimeout(sharedPushTimer);
+
+    var hadSession = !!(sb && user);
+    var pending = latestState;
+
     unwatchRemote();
     unwatchHousehold();
+    if (dispatch) dispatch({ t: 'signOut' });
+    UI.status('Signed out');
+
+    /** Never let one stalled call hold the rest up. */
+    function bounded(promise) {
+      return Promise.race([
+        Promise.resolve(promise).catch(function () {}),
+        new Promise(function (resolve) {
+          window.setTimeout(resolve, 4000);
+        }),
+      ]);
+    }
+
+    // Drop the stored session first, with scope 'local'. Three reasons it is
+    // not inside the `hadSession` branch below:
+    //   - it touches no network, so it cannot stall;
+    //   - without it, a revoke that times out leaves Supabase's token in
+    //     localStorage and the next reload signs the person straight back in;
+    //   - `hadSession` reflects *our* bookkeeping, and that can disagree with
+    //     what Supabase has stored — if the session lookup stalled at startup,
+    //     `user` is null while a perfectly good token sits on disk. Gating this
+    //     on it would skip the one step that actually signs someone out.
     if (sb) {
       try {
-        await sb.auth.signOut();
+        await sb.auth.signOut({ scope: 'local' });
       } catch (e) {
-        /* local sign-out proceeds regardless */
+        /* nothing stored to clear */
       }
+    }
+
+    if (hadSession) {
+      // Now the parts that do need the network, each bounded so neither can
+      // hold up the other.
+      await bounded(push(pending)); // `user` is still set, so this can write
+      user = null;
+      await bounded(sb.auth.signOut({ scope: 'global' })); // revoke server-side
     }
 
     user = null;
+    household = null;
+    householdMembers = [];
     writeMeta({ localChangedAt: null });
-    if (dispatch) dispatch({ t: 'signOut' });
+    signingOut = false;
   }
 
   // -------------------------------------------------------------------------
@@ -1212,7 +1258,7 @@
       return;
     }
 
-    if (applyingRemote) return;
+    if (applyingRemote || signingOut) return;
 
     if (sb && user) {
       writeMeta({ localChangedAt: new Date().toISOString() });
