@@ -548,117 +548,229 @@
   }
 
   // -------------------------------------------------------------------------
-  // The assistant
+  // The assistant, as a conversation
   // -------------------------------------------------------------------------
 
   /**
    * @param {object} opts
-   *   unsorted               count of uncategorised entries
-   *   onAsk(question)        -> Promise<string>
-   *   onSummarise()          -> Promise<string>
-   *   onCategorise(progress) -> Promise<{done, seen}>
+   *   unsorted            count of uncategorised entries
+   *   onSend(history)     -> Promise<{text?, action?}>
+   *   describeAction(a)   -> {title, rows:[[label,value]], problem?}
+   *   applyAction(a)      -> Promise<string>   confirmation line
+   *   quick               [{label, run:() => Promise<string>}]
    */
   function assistant(opts) {
-    var box = card(520);
-    box.appendChild(heading('Ask about your money', 25));
-    box.appendChild(
+    var history = []; // [{role:'user'|'model', text}]
+
+    var box = card(560);
+    box.style.display = 'grid';
+    box.style.gridTemplateRows = 'auto 1fr auto';
+    box.style.maxHeight = 'min(82vh, 760px)';
+    box.style.padding = '22px 24px';
+
+    // --- head ---------------------------------------------------------------
+    var head = el('div', 'display:flex;align-items:flex-start;gap:10px;margin-bottom:12px');
+    var title = el('div', 'flex:1;min-width:0');
+    title.appendChild(heading('Ask about your money', 23));
+    title.appendChild(
       el(
         'div',
-        'color:#57534A;margin-bottom:16px',
-        'It reads a summary of this month, never your whole ledger, and never anything you marked private.',
+        'color:#57534A;font:400 12px/1.5 ' + SANS,
+        'It sees a summary of your ledger, never anything in a private category.',
       ),
     );
+    head.appendChild(title);
+    var close = button('Close');
+    close.style.padding = '6px 12px';
+    close.onclick = hide;
+    head.appendChild(close);
+    box.appendChild(head);
 
-    var out = el(
+    // --- transcript ---------------------------------------------------------
+    var log = el(
       'div',
-      'min-height:88px;max-height:300px;overflow:auto;border:1px solid #E8E1D2;border-radius:10px;' +
-        'padding:14px;background:#FDFBF7;font:400 14px/1.65 ' + SANS + ';color:#1B1915;white-space:pre-wrap',
+      'overflow-y:auto;min-height:180px;border:1px solid #E8E1D2;border-radius:10px;' +
+        'padding:14px;background:#FDFBF7;display:flex;flex-direction:column;gap:10px',
     );
-    out.textContent = 'Ask a question, or use one of the buttons below.';
-    box.appendChild(out);
+    box.appendChild(log);
 
-    function busy(text) {
-      out.style.color = '#7A7468';
-      out.textContent = text;
-    }
-    function answer(text) {
-      out.style.color = '#1B1915';
-      out.textContent = text;
-    }
-    function failed(err) {
-      out.style.color = '#A6412B';
-      out.textContent = (err && err.message) || String(err);
+    function scroll() {
+      log.scrollTop = log.scrollHeight;
     }
 
-    // --- ask ----------------------------------------------------------------
-    var askRow = el('div', 'display:flex;gap:8px;margin-top:12px;align-items:flex-start');
+    function bubble(role, text) {
+      var mine = role === 'user';
+      var wrap = el('div', 'display:flex;' + (mine ? 'justify-content:flex-end' : 'justify-content:flex-start'));
+      var b = el(
+        'div',
+        'max-width:84%;padding:9px 12px;border-radius:12px;white-space:pre-wrap;' +
+          'font:400 13.5px/1.6 ' + SANS + ';' +
+          (mine
+            ? 'background:#17150F;color:#EFE8DA;border-bottom-right-radius:4px'
+            : 'background:#F1EADC;color:#1B1915;border-bottom-left-radius:4px'),
+        text,
+      );
+      wrap.appendChild(b);
+      log.appendChild(wrap);
+      scroll();
+      return b;
+    }
+
+    function note(text, tone) {
+      var n = el(
+        'div',
+        'font:400 12px/1.5 ' + SANS + ';color:' + (tone === 'error' ? '#A6412B' : '#7A7468') + ';padding:0 2px',
+        text,
+      );
+      log.appendChild(n);
+      scroll();
+      return n;
+    }
+
+    /** A proposed change, shown for approval. Nothing is saved until Save. */
+    function actionCard(action) {
+      var described = opts.describeAction(action);
+      var wrap = el(
+        'div',
+        'border:1px solid #D8CEB8;border-radius:11px;padding:12px 13px;background:#F7F1E3;display:grid;gap:9px',
+      );
+      wrap.appendChild(
+        el(
+          'div',
+          'font:600 11px ' + SANS + ';letter-spacing:.5px;text-transform:uppercase;color:#7A7468',
+          described.title,
+        ),
+      );
+
+      var table = el('div', 'display:grid;grid-template-columns:auto 1fr;gap:3px 12px;align-items:baseline');
+      described.rows.forEach(function (row) {
+        table.appendChild(el('div', 'font:400 12px ' + SANS + ';color:#7A7468', row[0]));
+        table.appendChild(el('div', 'font:500 13px ' + SANS + ';color:#1B1915', String(row[1])));
+      });
+      wrap.appendChild(table);
+
+      if (described.problem) {
+        wrap.appendChild(el('div', 'font:400 12px/1.5 ' + SANS + ';color:#A6412B', described.problem));
+      }
+
+      var row = el('div', 'display:flex;gap:7px;justify-content:flex-end');
+      var discard = button('Discard');
+      discard.style.padding = '6px 12px';
+      var save = button('Save', 'primary');
+      save.style.padding = '6px 14px';
+      if (described.problem) save.disabled = true;
+
+      discard.onclick = function () {
+        wrap.remove();
+        note('Discarded.');
+      };
+      save.onclick = async function () {
+        save.disabled = true;
+        discard.disabled = true;
+        save.textContent = 'Saving…';
+        try {
+          var line = await opts.applyAction(action);
+          wrap.remove();
+          note(line || 'Saved.');
+        } catch (err) {
+          save.textContent = 'Save';
+          save.disabled = false;
+          discard.disabled = false;
+          note((err && err.message) || String(err), 'error');
+        }
+      };
+
+      row.appendChild(discard);
+      row.appendChild(save);
+      wrap.appendChild(row);
+      log.appendChild(wrap);
+      scroll();
+    }
+
+    // --- composer -----------------------------------------------------------
+    var foot = el('div', 'display:grid;gap:9px;margin-top:12px');
+
+    var quickRow = el('div', 'display:flex;gap:7px;flex-wrap:wrap');
+    (opts.quick || []).forEach(function (q) {
+      var b = button(q.label);
+      b.style.padding = '6px 11px';
+      b.style.fontSize = '12px';
+      b.onclick = async function () {
+        b.disabled = true;
+        var pending = note(q.label + '…');
+        try {
+          var out = await q.run();
+          pending.remove();
+          bubble('model', out);
+          history.push({ role: 'model', text: out });
+        } catch (err) {
+          pending.remove();
+          note((err && err.message) || String(err), 'error');
+        }
+        b.disabled = false;
+      };
+      quickRow.appendChild(b);
+    });
+    foot.appendChild(quickRow);
+
+    var inputRow = el('div', 'display:flex;gap:8px;align-items:flex-start');
     var q = field('');
     q.wrap.style.flex = '1';
-    q.input.placeholder = 'e.g. what did we spend on eating out?';
-    askRow.appendChild(q.wrap);
-
-    var go = button('Ask', 'primary');
-    async function doAsk() {
-      var question = q.input.value.trim();
-      if (!question) return;
-      go.disabled = true;
-      busy('Thinking…');
-      try {
-        answer(await opts.onAsk(question));
-      } catch (err) {
-        failed(err);
-      }
-      go.disabled = false;
-    }
-    go.onclick = doAsk;
-    q.input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') doAsk();
-    });
-    askRow.appendChild(go);
-    box.appendChild(askRow);
-
-    // --- the other two ------------------------------------------------------
-    var tools = el('div', 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap');
-
-    var sum = button('Summarise this month');
-    sum.onclick = async function () {
-      sum.disabled = true;
-      busy('Reading the month…');
-      try {
-        answer(await opts.onSummarise());
-      } catch (err) {
-        failed(err);
-      }
-      sum.disabled = false;
-    };
-    tools.appendChild(sum);
-
-    var cat = button(opts.unsorted ? 'Sort ' + opts.unsorted + ' uncategorised' : 'Nothing to sort');
-    cat.disabled = !opts.unsorted;
-    cat.onclick = async function () {
-      cat.disabled = true;
-      busy('Sorting…');
-      try {
-        var res = await opts.onCategorise(function (done, total) {
-          busy('Sorting ' + done + ' of ' + total + '…');
-        });
-        answer(
-          res.done
-            ? 'Categorised ' + res.done + ' of ' + res.seen + ' entries. Check them on the Transactions screen.'
-            : 'Nothing could be matched confidently — they are still waiting for you.',
-        );
-      } catch (err) {
-        failed(err);
-      }
-    };
-    tools.appendChild(cat);
-    box.appendChild(tools);
-
-    var foot = el('div', 'display:flex;justify-content:flex-end;margin-top:16px');
-    var close = button('Close');
-    close.onclick = hide;
-    foot.appendChild(close);
+    q.input.placeholder = 'Ask, or just say what you spent';
+    inputRow.appendChild(q.wrap);
+    var send = button('Send', 'primary');
+    inputRow.appendChild(send);
+    foot.appendChild(inputRow);
     box.appendChild(foot);
+
+    var busy = false;
+
+    async function submit() {
+      var text = q.input.value.trim();
+      if (!text || busy) return;
+      busy = true;
+      send.disabled = true;
+      q.input.value = '';
+
+      bubble('user', text);
+      history.push({ role: 'user', text: text });
+      var thinking = note('Thinking…');
+
+      try {
+        var out = await opts.onSend(history.slice());
+        thinking.remove();
+        if (out.text) {
+          bubble('model', out.text);
+          history.push({ role: 'model', text: out.text });
+        }
+        if (out.action) {
+          actionCard(out.action);
+          // Keep the thread coherent for the next turn without replaying JSON.
+          history.push({ role: 'model', text: '(proposed a change for them to confirm)' });
+        }
+        if (!out.text && !out.action) note('No reply came back. Try again.', 'error');
+      } catch (err) {
+        thinking.remove();
+        note((err && err.message) || String(err), 'error');
+      }
+
+      busy = false;
+      send.disabled = false;
+      q.input.focus();
+    }
+
+    send.onclick = submit;
+    q.input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') submit();
+    });
+
+    note(
+      opts.unsorted
+        ? 'Try "dinner 32 at the pub yesterday", or ask what you spent. ' +
+            opts.unsorted +
+            ' entries still need a category.'
+        : 'Try "dinner 32 at the pub yesterday", or ask what you spent this month.',
+    );
 
     scrim().appendChild(box);
     q.input.focus();

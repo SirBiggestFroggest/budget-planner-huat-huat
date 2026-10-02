@@ -1169,6 +1169,245 @@
   }
 
   // -------------------------------------------------------------------------
+  // Context the assistant is given
+  // -------------------------------------------------------------------------
+
+  /** Richer than the monthly digest: enough recent detail to answer "which shop
+   *  did we spend most at", plus a few months of totals for comparisons, plus
+   *  the ids it needs to propose a change.
+   *
+   *  Still a summary, not the ledger. Private categories are removed here, so
+   *  they are not merely hidden from the household — they never reach the model.
+   */
+  function chatContext(state) {
+    var round = function (n) {
+      return Math.round(n * 100) / 100;
+    };
+
+    var labelOf = {};
+    (state.categories || []).forEach(function (c) {
+      labelOf[c.id] = c.label;
+    });
+    var groupLabel = {};
+    (state.groups || []).forEach(function (g) {
+      groupLabel[g.id] = g.label;
+    });
+
+    var visible = (state.transactions || []).filter(function (t) {
+      return t && !isPrivateCategory(state, t.categoryId);
+    });
+
+    // Last three months of per-category totals, for comparisons.
+    var byMonth = (state.months || []).slice(-3).map(function (m) {
+      var rows = {};
+      var income = 0;
+      visible.forEach(function (t) {
+        if (String(t.date || '').slice(0, 7) !== m) return;
+        if (t.amount > 0) {
+          income += t.amount;
+        } else {
+          var label = labelOf[t.categoryId] || 'Uncategorised';
+          rows[label] = (rows[label] || 0) + Math.abs(t.amount);
+        }
+      });
+      var budget = (state.budgets || []).filter(function (b) {
+        return b.month === m;
+      })[0];
+      var planned = {};
+      if (budget) {
+        (budget.lines || []).forEach(function (l) {
+          planned[l.label] = l.planned;
+        });
+      }
+      return {
+        month: m,
+        income: round(income),
+        byCategory: Object.keys(rows).map(function (label) {
+          return { label: label, spent: round(rows[label]), planned: planned[label] };
+        }),
+      };
+    });
+
+    // Enough individual entries to answer merchant-level questions, newest
+    // first and capped — the whole ledger would be slow, costly, and more than
+    // the question needs.
+    var recent = visible
+      .slice()
+      .sort(function (a, b) {
+        return a.date < b.date ? 1 : -1;
+      })
+      .slice(0, 80)
+      .map(function (t) {
+        return {
+          date: t.date,
+          merchant: t.merchant,
+          amount: round(t.amount),
+          category: labelOf[t.categoryId] || null,
+          who: t.memberId === PARTNER ? partnerName(state) : t.memberId === JOINT ? 'Joint' : meName(state),
+        };
+      });
+
+    return {
+      today: state.today,
+      thisMonth: thisMonth(),
+      members: (state.members || []).map(function (m) {
+        return { id: m.id, name: m.name };
+      }),
+      categories: (state.categories || [])
+        .filter(function (c) {
+          return !isPrivateCategory(state, c.id);
+        })
+        .map(function (c) {
+          return { id: c.id, label: c.label, group: groupLabel[c.groupId] };
+        }),
+      budgetGroups: (state.groups || []).map(function (g) {
+        return { id: g.id, label: g.label };
+      }),
+      goals: (state.goals || []).map(function (g) {
+        return { id: g.id, label: g.label, target: g.target, saved: g.saved, due: g.due };
+      }),
+      accounts: (state.accounts || []).map(function (a) {
+        return { id: a.id, label: a.label, balance: a.balance };
+      }),
+      months: byMonth,
+      recent: recent,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Proposed changes
+  // -------------------------------------------------------------------------
+  //
+  // The model proposes; the person approves; only then does anything change.
+  // Every argument is re-checked here against the real ledger, because a
+  // plausible-looking id or a mistyped amount must not reach the reducer.
+
+  function money(n) {
+    var v = Number(n);
+    return (v < 0 ? '-' : '') + Math.abs(v).toFixed(2);
+  }
+
+  function describeAction(action) {
+    var state = latestState || freshState();
+    var a = (action && action.args) || {};
+
+    if (action.name === 'log_entry') {
+      var cat = (state.categories || []).filter(function (c) {
+        return c.id === a.categoryId;
+      })[0];
+      var who = memberOf(state, a.memberId) || memberOf(state, ME);
+      var problem = null;
+      if (typeof a.amount !== 'number' || !isFinite(a.amount) || a.amount === 0) {
+        problem = 'That amount did not come through as a number.';
+      } else if (a.categoryId && !cat) {
+        problem = 'That category does not exist in your ledger.';
+      }
+      return {
+        title: a.amount > 0 ? 'Log money in' : 'Log an entry',
+        rows: [
+          ['Amount', money(a.amount)],
+          ['Merchant', a.merchant || '—'],
+          ['Category', cat ? cat.label : 'Uncategorised'],
+          ['Date', a.date || state.today],
+          ['Paid by', who ? who.name : '—'],
+        ].concat(a.note ? [['Note', a.note]] : []),
+        problem: problem,
+      };
+    }
+
+    if (action.name === 'set_budget_line') {
+      var group = (state.groups || []).filter(function (g) {
+        return g.id === a.groupId;
+      })[0];
+      return {
+        title: 'Change this month’s budget',
+        rows: [
+          ['Category', group ? group.label : a.groupId],
+          ['New plan', money(a.planned)],
+        ].concat(a.reason ? [['Why', a.reason]] : []),
+        problem: !group
+          ? 'That budget category does not exist in your ledger.'
+          : typeof a.planned !== 'number' || a.planned < 0
+            ? 'That planned amount is not usable.'
+            : null,
+      };
+    }
+
+    if (action.name === 'set_goal_contribution') {
+      var goal = (state.goals || []).filter(function (g) {
+        return g.id === a.goalId;
+      })[0];
+      var member = memberOf(state, a.memberId) || memberOf(state, ME);
+      return {
+        title: 'Set a goal contribution',
+        rows: [
+          ['Goal', goal ? goal.label : a.goalId],
+          ['Each month', money(a.amount)],
+          ['From', member ? member.name : '—'],
+        ].concat(a.reason ? [['Why', a.reason]] : []),
+        problem: !goal ? 'That goal does not exist in your ledger.' : null,
+      };
+    }
+
+    return { title: 'Unknown change', rows: [], problem: 'This is not something the app can apply.' };
+  }
+
+  async function applyAction(action) {
+    var state = latestState || freshState();
+    var a = (action && action.args) || {};
+    var described = describeAction(action);
+    if (described.problem) throw new Error(described.problem);
+
+    if (action.name === 'log_entry') {
+      var valid = {};
+      (state.categories || []).forEach(function (c) {
+        valid[c.id] = true;
+      });
+      dispatch({
+        t: 'addTx',
+        tx: {
+          amount: a.amount,
+          merchant: a.merchant || '',
+          categoryId: a.categoryId && valid[a.categoryId] ? a.categoryId : null,
+          date: /^\d{4}-\d{2}-\d{2}$/.test(a.date || '') ? a.date : state.today,
+          memberId: memberOf(state, a.memberId) ? a.memberId : (state.session && state.session.memberId) || ME,
+          accountId: (state.accounts[0] && state.accounts[0].id) || null,
+          note: a.note || '',
+          flex: false,
+          reviewed: true,
+        },
+      });
+      return 'Saved ' + money(a.amount) + ' at ' + (a.merchant || 'an entry') + '.';
+    }
+
+    if (action.name === 'set_budget_line') {
+      var budget = (state.budgets || []).filter(function (b) {
+        return b.month === thisMonth();
+      })[0];
+      var line =
+        budget &&
+        (budget.lines || []).filter(function (l) {
+          return l.groupId === a.groupId;
+        })[0];
+      if (!line) throw new Error('No budget line for that category this month.');
+      dispatch({ t: 'setPlanned', month: thisMonth(), lineId: line.id, planned: a.planned });
+      return 'Budget updated to ' + money(a.planned) + '.';
+    }
+
+    if (action.name === 'set_goal_contribution') {
+      dispatch({
+        t: 'setContribution',
+        goalId: a.goalId,
+        memberId: memberOf(state, a.memberId) ? a.memberId : ME,
+        amount: a.amount,
+      });
+      return 'Contribution set to ' + money(a.amount) + ' a month.';
+    }
+
+    throw new Error('This is not something the app can apply.');
+  }
+
+  // -------------------------------------------------------------------------
   // Panels
   // -------------------------------------------------------------------------
 
@@ -1229,17 +1468,44 @@
 
     UI.assistant({
       unsorted: uncategorised(current).length,
-      onAsk: async function (question) {
-        var out = await askAssistant({ task: 'ask', question: question, summary: digest(latestState || current) });
-        return out.text;
+
+      onSend: async function (history) {
+        var out = await askAssistant({
+          task: 'chat',
+          messages: history,
+          context: chatContext(latestState || current),
+        });
+        return { text: out.text, action: out.action };
       },
-      onSummarise: async function () {
-        var out = await askAssistant({ task: 'summarise', summary: digest(latestState || current) });
-        return out.text;
-      },
-      onCategorise: function (progress) {
-        return categoriseAll(dispatch, progress);
-      },
+
+      describeAction: describeAction,
+      applyAction: applyAction,
+
+      quick: [
+        {
+          label: 'Summarise this month',
+          run: async function () {
+            var out = await askAssistant({ task: 'summarise', summary: digest(latestState || current) });
+            return out.text;
+          },
+        },
+        {
+          label: 'Anything I should know?',
+          run: async function () {
+            var out = await askAssistant({ task: 'insights', summary: chatContext(latestState || current) });
+            return out.text;
+          },
+        },
+        {
+          label: 'Sort uncategorised',
+          run: async function () {
+            var res = await categoriseAll(dispatch);
+            return res.done
+              ? 'Categorised ' + res.done + ' of ' + res.seen + ' entries. They are on the Transactions screen.'
+              : 'Nothing left to sort.';
+          },
+        },
+      ],
     });
   }
 
