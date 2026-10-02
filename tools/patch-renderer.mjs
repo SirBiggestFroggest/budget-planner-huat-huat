@@ -79,8 +79,30 @@ const edits = [
   },
   {
     why: 'Merchant field suggested a shop from the demo ledger',
+    // Direction-aware: money in comes FROM somewhere. `u` is the money-in flag
+    // the chips at the top of the composer set, and it is already in scope here.
     find: '"Mobile — two lines":"Alder Market"',
-    with: '"Mobile — two lines":"Where the money went"',
+    with: '"Mobile — two lines":u>0?"Who paid you":"Where the money went"',
+  },
+  {
+    why: 'The one field blocking Save was labelled for spending only',
+    // Save is gated on this field being filled, which is right — it is the key
+    // income is grouped by, so a blank one gives you a nameless income source.
+    // But it was labelled "Where", placeheld "Where the money went" and
+    // explained as "where it went", so on a salary the only thing standing
+    // between you and a saved entry described itself as a shop you spent at.
+    find: 'label:o?"What is it":"Where"',
+    with: 'label:o?"What is it":u>0?"Where from":"Where"',
+  },
+  {
+    why: 'The hint under a disabled Save asked for the wrong thing on money in',
+    find: '"Type an amount and where it went."',
+    with: 'u>0?"Type an amount and where it came from.":"Type an amount and where it went."',
+  },
+  {
+    why: '"Whose spend is it" reads wrong on a salary',
+    find: 'label:"Whose spend is it"',
+    with: 'label:u>0?"Who earned it":"Whose spend is it"',
   },
   {
     why: 'Account fields suggested a bank invented for the demo',
