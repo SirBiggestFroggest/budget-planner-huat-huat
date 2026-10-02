@@ -280,6 +280,18 @@ const edits = [
       'l.jsx("span",{style:{width:16,textAlign:"center"},children:"✦"}),"Ask about your money"]}),',
   },
 
+  {
+    why: 'The budget page could add a line but never rename or remove a group',
+    find: 'l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
+    with:
+      'l.jsxs(l.Fragment,{children:[' +
+      // In the budget page oe() binds {s:e, month:t, dispatch:n} — so the ledger
+      // is `e` and `t` is a month string. Passing `t` here handed the panel a
+      // date instead of a ledger, and it rendered with no groups at all.
+      `l.jsx("button",{className:"btn sm",onClick:()=>${HH}.openCategories(n,e),children:"Manage groups"}),` +
+      'l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})]})',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

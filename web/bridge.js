@@ -1510,6 +1510,148 @@
   }
 
   // -------------------------------------------------------------------------
+  // Managing category groups
+  // -------------------------------------------------------------------------
+  //
+  // The bundle's reducer can add a group or a category but cannot rename or
+  // remove one, so this rebuilds the affected slices and swaps the whole ledger
+  // in through the `import` action it does support.
+  //
+  // The cascade is the delicate part. A group does not exist on its own: its
+  // categories reference it, budget lines are keyed by it, and transactions
+  // point at its categories. Removing one without following those links would
+  // leave entries pointing at a category that no longer exists, which reads as
+  // money vanishing. Here those entries become uncategorised instead — still
+  // in the ledger, still in the totals, just waiting to be filed again.
+
+  var GROUP_SWATCHES = ['#4F6E9A', '#B0542C', '#3F5A6E', '#6E8F5A', '#8A5A7A', '#A88A2E', '#7A7468', '#C9A24A'];
+
+  function slugId(label, taken) {
+    var base = slug(label) || 'group';
+    var id = base;
+    var n = 2;
+    while (taken[id]) id = base + '-' + n++;
+    taken[id] = true;
+    return id;
+  }
+
+  function applyCategoryModel(state, model) {
+    var taken = {};
+    (state.groups || []).forEach(function (g) { taken[g.id] = true; });
+
+    var groups = [];
+    var categories = [];
+    var categoryMap = {}; // old category id -> new id, or null when dropped
+    var keptGroupIds = {};
+
+    model.forEach(function (g) {
+      if (g.removed) {
+        g.categories.forEach(function (c) { if (c.id) categoryMap[c.id] = null; });
+        return;
+      }
+      var gid = g.id || slugId(g.label, taken);
+      keptGroupIds[gid] = true;
+      groups.push({ id: gid, label: g.label.trim(), color: g.color });
+
+      g.categories.forEach(function (c) {
+        var label = String(c.label || '').trim();
+        if (c.removed || !label) {
+          if (c.id) categoryMap[c.id] = null;
+          return;
+        }
+        // Keep the existing id where there is one, so entries stay attached.
+        var cid = c.id || gid + ':' + slug(label);
+        categories.push({ id: cid, groupId: gid, label: label });
+        if (c.id) categoryMap[c.id] = cid;
+      });
+    });
+
+    // Entries whose category went away become uncategorised, not deleted.
+    var transactions = (state.transactions || []).map(function (t) {
+      if (!t.categoryId) return t;
+      if (!(t.categoryId in categoryMap)) return t; // untouched group
+      var next = categoryMap[t.categoryId];
+      return next === t.categoryId ? t : Object.assign({}, t, { categoryId: next });
+    });
+
+    // Budget lines follow their group: dropped ones go, kept ones take the new
+    // label and colour, and a new group gets a line so it can be planned.
+    var budgets = (state.budgets || []).map(function (b) {
+      var lines = (b.lines || []).filter(function (l) { return keptGroupIds[l.groupId]; });
+      lines = lines.map(function (l) {
+        var g = groups.filter(function (x) { return x.id === l.groupId; })[0];
+        return g ? Object.assign({}, l, { label: g.label, color: g.color }) : l;
+      });
+      groups.forEach(function (g) {
+        if (g.id === 'income') return; // income is tracked, not planned
+        if (lines.some(function (l) { return l.groupId === g.id; })) return;
+        lines.push({ id: 'bl_' + b.month + '_' + g.id, groupId: g.id, label: g.label, color: g.color, planned: 0 });
+      });
+      return Object.assign({}, b, { lines: lines });
+    });
+
+    // Recurring items and goals point at categories too.
+    var recurring = (state.recurring || []).map(function (r) {
+      if (!r.categoryId || !(r.categoryId in categoryMap)) return r;
+      return Object.assign({}, r, { categoryId: categoryMap[r.categoryId] });
+    });
+
+    var privateCategories = (state.privateCategories || []).filter(function (id) {
+      return !(id in categoryMap) || categoryMap[id];
+    }).map(function (id) {
+      return id in categoryMap ? categoryMap[id] : id;
+    });
+
+    return Object.assign({}, state, {
+      groups: groups,
+      categories: categories,
+      transactions: transactions,
+      budgets: budgets,
+      recurring: recurring,
+      privateCategories: privateCategories,
+    });
+  }
+
+  function openCategories(appDispatch, state) {
+    if (appDispatch) dispatch = appDispatch;
+    var current = state || latestState || freshState();
+
+    var usedByCategory = {};
+    var usedByGroup = {};
+    var groupOfCategory = {};
+    (current.categories || []).forEach(function (c) { groupOfCategory[c.id] = c.groupId; });
+    (current.transactions || []).forEach(function (t) {
+      if (!t || !t.categoryId) return;
+      usedByCategory[t.categoryId] = (usedByCategory[t.categoryId] || 0) + 1;
+      var g = groupOfCategory[t.categoryId];
+      if (g) usedByGroup[g] = (usedByGroup[g] || 0) + 1;
+    });
+
+    UI.categories({
+      swatches: GROUP_SWATCHES,
+      groups: (current.groups || []).map(function (g) {
+        return {
+          id: g.id,
+          label: g.label,
+          color: g.color,
+          inUse: usedByGroup[g.id] || 0,
+          categories: (current.categories || [])
+            .filter(function (c) { return c.groupId === g.id; })
+            .map(function (c) {
+              return { id: c.id, label: c.label, inUse: usedByCategory[c.id] || 0 };
+            }),
+        };
+      }),
+      onSave: function (model) {
+        var next = applyCategoryModel(latestState || current, model);
+        applyState(next);
+        latestState = next;
+        UI.status('Categories updated');
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // Wiring
   // -------------------------------------------------------------------------
 
@@ -1667,6 +1809,7 @@
     signOut: signOut,
     openProfile: openProfile,
     openSharing: openSharing,
+    openCategories: openCategories,
     openAssistant: openAssistant,
 
     // asset path, so the patched bundle does not hardcode it

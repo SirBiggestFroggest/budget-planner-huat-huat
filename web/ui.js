@@ -72,6 +72,11 @@
   var overlay = null;
 
   function scrim() {
+    // `overlay` is cached, so if the node ever leaves the document the cached
+    // reference goes stale and every panel silently fails to appear. hide()
+    // only sets display:none, so nothing in the app does that — but a detached
+    // node is cheap to detect and expensive to debug.
+    if (overlay && !overlay.isConnected) overlay = null;
     if (!overlay) {
       overlay = el(
         'div',
@@ -776,12 +781,230 @@
     q.input.focus();
   }
 
+  // -------------------------------------------------------------------------
+  // Category groups
+  // -------------------------------------------------------------------------
+
+  /**
+   * Rename, recolour, add and remove budget category groups and the categories
+   * inside them.
+   *
+   * @param {object} opts
+   *   groups      [{id,label,color,inUse,planned,categories:[{id,label,inUse}]}]
+   *   swatches    [hex]
+   *   onSave(model)   the edited copy, with `removed` flags
+   */
+  function categories(opts) {
+    // Work on a copy: nothing changes until Save.
+    var model = opts.groups.map(function (g) {
+      return {
+        id: g.id,
+        label: g.label,
+        color: g.color,
+        inUse: g.inUse,
+        planned: g.planned,
+        removed: false,
+        categories: g.categories.map(function (c) {
+          return { id: c.id, label: c.label, inUse: c.inUse, removed: false };
+        }),
+      };
+    });
+
+    var box = card(560);
+    box.style.maxHeight = 'min(84vh, 780px)';
+    box.style.display = 'grid';
+    box.style.gridTemplateRows = 'auto auto 1fr auto auto';
+    box.appendChild(heading('Category groups', 25));
+    box.appendChild(
+      el(
+        'div',
+        'color:#57534A;margin-bottom:14px;font:400 13px/1.55 ' + SANS,
+        'Rename, recolour, or remove a group. Removing one also removes its budget line; ' +
+          'entries already filed under it become uncategorised rather than disappearing.',
+      ),
+    );
+
+    var list = el('div', 'overflow-y:auto;display:grid;gap:10px;padding-right:4px;align-content:start');
+
+    function groupRow(g) {
+      var wrap = el(
+        'div',
+        'border:1px solid #E0D7C5;border-radius:11px;padding:11px 12px;display:grid;gap:9px;background:#FDFBF7',
+      );
+
+      var top = el('div', 'display:flex;gap:9px;align-items:center');
+
+      var swatch = el(
+        'button',
+        'width:22px;height:22px;border-radius:50%;flex:none;cursor:pointer;border:none;background:' + g.color,
+      );
+      swatch.type = 'button';
+      swatch.title = 'Change colour';
+      swatch.onclick = function () {
+        var i = opts.swatches.indexOf(g.color);
+        g.color = opts.swatches[(i + 1) % opts.swatches.length];
+        swatch.style.background = g.color;
+      };
+      top.appendChild(swatch);
+
+      var name = el(
+        'input',
+        'flex:1;min-width:0;border:1px solid #DDD4C2;background:#FFF;border-radius:8px;padding:6px 9px;' +
+          'font:500 13px ' + SANS + ';color:#1B1915',
+      );
+      name.value = g.label;
+      name.maxLength = 40;
+      name.oninput = function () {
+        g.label = name.value;
+      };
+      top.appendChild(name);
+
+      var drop = button('Remove', 'danger');
+      drop.style.padding = '5px 10px';
+      top.appendChild(drop);
+      wrap.appendChild(top);
+
+      var meta = el('div', 'font:400 11px/1.45 ' + SANS + ';color:#7A7468');
+      wrap.appendChild(meta);
+
+      // --- categories inside it --------------------------------------------
+      var kids = el('div', 'display:grid;gap:4px;padding-left:2px;justify-items:stretch');
+
+      function paintKids() {
+        kids.innerHTML = '';
+        g.categories.forEach(function (c) {
+          if (c.removed) return;
+          var row = el('div', 'display:flex;gap:7px;align-items:center');
+          var ci = el(
+            'input',
+            'flex:1;min-width:0;border:1px solid #E8E1D2;background:#FFF;border-radius:7px;padding:4px 8px;' +
+              'font:400 12.5px ' + SANS + ';color:#1B1915',
+          );
+          ci.value = c.label;
+          ci.maxLength = 40;
+          ci.oninput = function () {
+            c.label = ci.value;
+          };
+          row.appendChild(ci);
+
+          var x = button('✕');
+          x.style.padding = '3px 8px';
+          x.title = c.inUse ? c.inUse + ' entries use this' : 'Remove';
+          x.onclick = function () {
+            c.removed = true;
+            paintKids();
+          };
+          row.appendChild(x);
+          kids.appendChild(row);
+        });
+
+        var add = button('＋ Category');
+        add.style.padding = '4px 9px';
+        add.style.fontSize = '12px';
+        add.style.justifySelf = 'start';
+        add.onclick = function () {
+          g.categories.push({ id: null, label: '', inUse: 0, removed: false });
+          paintKids();
+          var inputs = kids.querySelectorAll('input');
+          if (inputs.length) inputs[inputs.length - 1].focus();
+        };
+        kids.appendChild(add);
+      }
+      paintKids();
+      wrap.appendChild(kids);
+
+      function paintRemoved() {
+        wrap.style.opacity = g.removed ? '0.45' : '1';
+        name.disabled = g.removed;
+        kids.style.display = g.removed ? 'none' : 'grid';
+        drop.textContent = g.removed ? 'Keep' : 'Remove';
+        drop.style.color = g.removed ? '#1B1915' : '#A6412B';
+        meta.textContent = g.removed
+          ? g.inUse
+            ? 'Will be removed — ' + g.inUse + ' entries become uncategorised'
+            : 'Will be removed'
+          : g.inUse
+            ? g.inUse + (g.inUse === 1 ? ' entry uses this group' : ' entries use this group')
+            : 'Nothing filed under this yet';
+      }
+      drop.onclick = function () {
+        g.removed = !g.removed;
+        paintRemoved();
+      };
+      paintRemoved();
+
+      return wrap;
+    }
+
+    function paint() {
+      list.innerHTML = '';
+      model.forEach(function (g) {
+        list.appendChild(groupRow(g));
+      });
+    }
+    paint();
+    box.appendChild(list);
+
+    var error = el('div', 'font:400 12px ' + SANS + ';color:#A6412B;margin-top:8px');
+    error.style.display = 'none';
+    box.appendChild(error);
+
+    // --- actions ------------------------------------------------------------
+    var foot = el('div', 'display:flex;gap:8px;align-items:center;margin-top:12px');
+
+    var addGroup = button('＋ New group');
+    addGroup.onclick = function () {
+      model.push({
+        id: null,
+        label: '',
+        color: opts.swatches[model.length % opts.swatches.length],
+        inUse: 0,
+        planned: 0,
+        removed: false,
+        categories: [],
+      });
+      paint();
+      var inputs = list.querySelectorAll('input');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+      list.scrollTop = list.scrollHeight;
+    };
+    foot.appendChild(addGroup);
+    foot.appendChild(el('div', 'flex:1'));
+
+    var cancel = button('Cancel');
+    cancel.onclick = hide;
+    var save = button('Save', 'primary');
+    save.onclick = function () {
+      var kept = model.filter(function (g) {
+        return !g.removed;
+      });
+      if (kept.some(function (g) { return !String(g.label || '').trim(); })) {
+        error.textContent = 'Every group needs a name.';
+        error.style.display = 'block';
+        return;
+      }
+      if (!kept.length) {
+        error.textContent = 'Keep at least one group — the budget needs something to plan against.';
+        error.style.display = 'block';
+        return;
+      }
+      hide();
+      opts.onSave(model);
+    };
+    foot.appendChild(cancel);
+    foot.appendChild(save);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+  }
+
   window.__hhUI = {
     status: status,
     message: message,
     profile: profile,
     sharing: sharing,
     assistant: assistant,
+    categories: categories,
     hide: hide,
   };
 })();
