@@ -330,6 +330,17 @@ const edits = [
       `l.jsx("button",{className:"btn ghost sm",title:"Edit",onClick:()=>${HH}.openRecurring(r,g),children:"Edit"}),`,
   },
 
+  {
+    why: 'Typing into a money field kept replacing itself: 1000 ended up as 0',
+    // The intent is "select what is there when you click in, so typing replaces
+    // it". But the effect depends on the draft text, so it re-ran on every
+    // keystroke and re-selected the field — each new digit overwrote the last.
+    // Depending on whether editing is active instead makes it fire once, when
+    // the field opens, which is what was meant.
+    find: 'E.useEffect(()=>{var u;s!==null&&((u=o.current)==null||u.select())},[s])',
+    with: 'E.useEffect(()=>{var u;s!==null&&((u=o.current)==null||u.select())},[s===null])',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
