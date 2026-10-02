@@ -26,8 +26,27 @@
  */
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+/** Models to try, in order, until one answers.
+ *
+ *  Two things learned the hard way, both verified against a live key:
+ *
+ *  - `gemini-2.5-flash` is still *listed* by the models endpoint but returns
+ *    404 "no longer available to new users" when actually called. Listing a
+ *    model is not proof you can use it.
+ *  - Flash models 503 under load often enough to matter, and it is transient.
+ *    One name alone makes the assistant flaky for no reason.
+ *
+ *  GEMINI_MODEL overrides the whole chain with a single name.
+ */
+const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+const MODELS = (() => {
+  const pinned = Deno.env.get('GEMINI_MODEL');
+  return pinned ? [pinned] : FALLBACK_MODELS;
+})();
+
+const endpointFor = (model: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 // The site is served from a different origin to the function, so preflight has
 // to be answered. Set ALLOWED_ORIGIN to your deployed URL to narrow this.
@@ -135,37 +154,51 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'TOO_LARGE', message: 'That is more ledger than the assistant can read at once.' }, 413);
   }
 
-  try {
-    const res = await fetch(`${ENDPOINT}?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM }] },
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: jsonOnly ? 0 : 0.4,
-          maxOutputTokens: jsonOnly ? 120 : 600,
-          ...(jsonOnly ? { responseMimeType: 'application/json' } : {}),
-        },
-      }),
-    });
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: jsonOnly ? 0 : 0.4,
+      // Current flash models "think" before answering, and those thinking
+      // tokens come out of maxOutputTokens. Picking a category needs no
+      // reasoning, and leaving thinking on burned the entire budget before a
+      // single character of JSON was emitted — the reply came back truncated
+      // and unparseable. Prose answers keep thinking, with room to afford it.
+      maxOutputTokens: jsonOnly ? 256 : 2048,
+      ...(jsonOnly
+        ? { responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
+        : {}),
+    },
+  });
+
+  let lastStatus = 0;
+  let lastDetail = '';
+
+  for (const model of MODELS) {
+    let res: Response;
+    try {
+      res = await fetch(endpointFor(model), {
+        method: 'POST',
+        // The key goes in a header, not the query string, so it cannot be
+        // captured by anything that logs URLs.
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+        body,
+      });
+    } catch (err) {
+      console.error('[assistant] network failure on', model, err instanceof Error ? err.message : err);
+      lastStatus = 0;
+      continue;
+    }
 
     if (!res.ok) {
-      const detail = await res.text();
-      // Surface the status so the client can tell "bad key" from "rate limited",
-      // but never echo the key or the full upstream body to the browser.
-      console.error('[assistant] gemini error', res.status, detail.slice(0, 300));
-      return json(
-        {
-          error: 'UPSTREAM',
-          status: res.status,
-          message:
-            res.status === 400 || res.status === 403
-              ? 'Gemini rejected the request — check the API key, and that the model name is available to it.'
-              : 'The assistant could not be reached. Try again in a moment.',
-        },
-        502,
-      );
+      lastStatus = res.status;
+      lastDetail = (await res.text()).slice(0, 300);
+      // 404 = model gone for this key, 429/503 = busy. Both are worth retrying
+      // on the next model. A 400 or 403 is about the request or the key itself,
+      // so another model will fail identically — stop and report.
+      console.error('[assistant] gemini', res.status, 'on', model, lastDetail);
+      if (res.status === 400 || res.status === 401 || res.status === 403) break;
+      continue;
     }
 
     const data = await res.json();
@@ -173,20 +206,34 @@ Deno.serve(async (req: Request) => {
       data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
 
     if (!text.trim()) {
-      return json({ error: 'EMPTY', message: 'The assistant had nothing to say.' }, 502);
+      lastStatus = 502;
+      lastDetail = 'empty candidate, finishReason=' + (data?.candidates?.[0]?.finishReason ?? '?');
+      console.error('[assistant]', lastDetail, 'on', model);
+      continue;
     }
 
     if (jsonOnly) {
       try {
-        return json({ ok: true, result: JSON.parse(text) });
+        return json({ ok: true, model, result: JSON.parse(text) });
       } catch {
-        return json({ error: 'BAD_JSON', message: 'The assistant did not return usable JSON.' }, 502);
+        lastStatus = 502;
+        lastDetail = 'unparseable JSON';
+        continue;
       }
     }
 
-    return json({ ok: true, text: text.trim() });
-  } catch (err) {
-    console.error('[assistant] failed', err instanceof Error ? err.message : err);
-    return json({ error: 'FAILED', message: 'The assistant could not be reached.' }, 502);
+    return json({ ok: true, model, text: text.trim() });
   }
+
+  return json(
+    {
+      error: 'UPSTREAM',
+      status: lastStatus,
+      message:
+        lastStatus === 400 || lastStatus === 401 || lastStatus === 403
+          ? 'Gemini rejected the request — check that GEMINI_API_KEY is valid.'
+          : 'Every model was unavailable just now. Try again in a moment.',
+    },
+    502,
+  );
 });
