@@ -1962,6 +1962,55 @@
   }
 
   // -------------------------------------------------------------------------
+  // Editing a transaction
+  // -------------------------------------------------------------------------
+
+  /** The reducer has always had updateTx, but the only thing that called it was
+   *  the category chip in the table. Everything else about an entry — a typo in
+   *  the name, the wrong amount, the wrong date, the wrong account, the wrong
+   *  person, or money logged in the wrong direction — could only be fixed by
+   *  deleting the row and typing it again, which loses its thread. */
+  function openTransaction(appDispatch, tx) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState || freshState();
+    if (!tx) return;
+
+    var groupOf = {};
+    (state.groups || []).forEach(function (g) {
+      groupOf[g.id] = g.label;
+    });
+
+    UI.transaction({
+      tx: tx,
+      categories: (state.categories || []).map(function (c) {
+        return { id: c.id, label: c.label, group: groupOf[c.groupId] };
+      }),
+      accounts: (state.accounts || []).map(function (a) {
+        return { id: a.id, label: a.label };
+      }),
+      members: (state.members || []).map(function (m) {
+        return { id: m.id, name: m.name };
+      }),
+      onSave: function (patch) {
+        // An entry that was flagged for review because it had no category has
+        // been looked at by the time it is saved from here, so give it one.
+        if (patch.categoryId) patch.reviewed = true;
+        dispatch({ t: 'updateTx', id: tx.id, patch: patch });
+        UI.status(patch.merchant + ' updated');
+      },
+      onDelete: function () {
+        UI.message('Delete this entry?', 'It is removed from the ledger for everyone.', true, {
+          label: 'Delete',
+          onClick: function () {
+            dispatch({ t: 'deleteTx', id: tx.id });
+            UI.status((tx.merchant || 'Entry') + ' deleted');
+          },
+        });
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // "This repeats" on a one-off entry
   // -------------------------------------------------------------------------
   //
@@ -2176,6 +2225,7 @@
     openSettings: openSettings,
     openRecurring: openRecurring,
     maybeRepeat: maybeRepeat,
+    editTransaction: openTransaction,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 

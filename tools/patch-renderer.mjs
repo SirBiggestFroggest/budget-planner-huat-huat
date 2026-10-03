@@ -459,6 +459,19 @@ const edits = [
     with: 'function vm(e,t,n){const r=e.recurring.filter(i=>n==="all"||i.memberId===n),s=r.reduce((i,o)=>i+Math.abs(zn(o)),0)||1;return r.map(i=>({rec:i,primary:t==="month"?zn(i):Nu(i),secondary:t==="month"?Nu(i):zn(i),share:Math.abs(zn(i))/s})).sort((i,o)=>Math.abs(o.primary)-Math.abs(i.primary)).map((i,o)=>({...i,rank:o+1}))}',
   },
 
+  {
+    why: 'An entry could be deleted but never corrected',
+    // updateTx has always existed in the reducer; the only thing that called it
+    // was the category chip. A typo in the name, a wrong amount, date, account,
+    // person, or money logged in the wrong direction could only be fixed by
+    // deleting the row and retyping it — which throws away its thread.
+    //
+    // `s` is this component's dispatch and `_` the row's transaction. The cell
+    // becomes jsxs because it now holds two children.
+    find: 'l.jsx("td",{children:l.jsx("button",{className:"btn ghost sm",onClick:()=>p(_.id),title:_.thread.length?`${_.thread.length} message${_.thread.length===1?"":"s"}`:"Start a thread",children:_.thread.length?`💬${_.thread.length}`:"💬"})})',
+    with: 'l.jsxs("td",{style:{whiteSpace:"nowrap"},children:[l.jsx("button",{className:"btn ghost sm",onClick:()=>window.__hh.editTransaction(s,_),title:"Edit this entry",children:"✎"}),l.jsx("button",{className:"btn ghost sm",onClick:()=>p(_.id),title:_.thread.length?`${_.thread.length} message${_.thread.length===1?"":"s"}`:"Start a thread",children:_.thread.length?`💬${_.thread.length}`:"💬"})]})',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

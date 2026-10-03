@@ -1473,6 +1473,211 @@
     name.input.focus();
   }
 
+  // -------------------------------------------------------------------------
+  // Editing a transaction
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {object} opts
+   *   tx          {merchant, amount, date, categoryId, accountId, memberId, note}
+   *   categories  [{id,label,group}]
+   *   accounts    [{id,label}]
+   *   members     [{id,name}]
+   *   onSave(patch)
+   *   onDelete()
+   */
+  function transaction(opts) {
+    var tx = opts.tx || {};
+
+    var box = card(470);
+    box.style.maxHeight = 'min(86vh, 820px)';
+    box.style.display = 'grid';
+    box.style.gridTemplateRows = 'auto 1fr auto auto';
+
+    box.appendChild(heading('Edit entry', 24));
+
+    var body = el('div', 'display:grid;gap:13px;overflow-y:auto;padding-right:4px;align-content:start');
+
+    // --- money in or out ------------------------------------------------------
+    // The stored amount is signed. Editing it as a positive figure plus a
+    // direction keeps a typed minus from quietly contradicting the buttons,
+    // the same way the recurring editor does it.
+    var kind = Number(tx.amount) > 0 ? 'income' : 'bill';
+    var kindWrap = el('div', 'display:grid;gap:6px');
+    kindWrap.appendChild(label('Direction'));
+    var kindRow = el('div', 'display:flex;gap:7px');
+    var kindBtns = [];
+
+    function paintKind() {
+      kindBtns.forEach(function (x) {
+        var on = x.v === kind;
+        x.node.style.background = on ? '#17150F' : '#EFE9DE';
+        x.node.style.color = on ? '#FDFBF7' : '#1B1915';
+        x.node.style.borderColor = on ? '#17150F' : '#D8CEB8';
+      });
+    }
+
+    [['bill', 'Money out'], ['income', 'Money in']].forEach(function (pair) {
+      var b = button(pair[1]);
+      b.style.padding = '6px 13px';
+      b.onclick = function () {
+        kind = pair[0];
+        paintKind();
+      };
+      kindBtns.push({ node: b, v: pair[0] });
+      kindRow.appendChild(b);
+    });
+    paintKind();
+    kindWrap.appendChild(kindRow);
+    body.appendChild(kindWrap);
+
+    var amount = field('Amount', 'A positive figure — the direction is set above.');
+    amount.input.value = Math.abs(Number(tx.amount) || 0);
+    amount.input.inputMode = 'decimal';
+    body.appendChild(amount.wrap);
+
+    var name = field(kind === 'income' ? 'Where it came from' : 'Where it went');
+    name.input.value = String(tx.merchant || '');
+    name.input.maxLength = 60;
+    body.appendChild(name.wrap);
+
+    // The merchant label follows the direction, so the field does not keep
+    // calling a salary a shop once the direction is flipped.
+    var nameLabel = name.wrap.firstChild;
+    kindBtns.forEach(function (x) {
+      var prev = x.node.onclick;
+      x.node.onclick = function () {
+        prev();
+        nameLabel.textContent = kind === 'income' ? 'Where it came from' : 'Where it went';
+      };
+    });
+
+    var date = field('Date it happened');
+    date.input.type = 'date';
+    date.input.value = String(tx.date || '');
+    body.appendChild(date.wrap);
+
+    function picker(labelText, options, current, onPick) {
+      var wrap = el('div', 'display:grid;gap:6px');
+      wrap.appendChild(label(labelText));
+      var sel = el(
+        'select',
+        'border:1px solid #DDD4C2;background:#FDFBF7;border-radius:8px;padding:8px 10px;' +
+          'font:400 13px ' + SANS + ';width:100%;color:#1B1915',
+      );
+      options.forEach(function (o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (String(o.value) === String(current)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.onchange = function () {
+        onPick(sel.value);
+      };
+      wrap.appendChild(sel);
+      return wrap;
+    }
+
+    var categoryId = tx.categoryId || '';
+    body.appendChild(
+      picker(
+        'Category',
+        [{ value: '', label: 'Uncategorised' }].concat(
+          (opts.categories || []).map(function (c) {
+            return { value: c.id, label: c.group ? c.group + ' · ' + c.label : c.label };
+          }),
+        ),
+        categoryId,
+        function (v) {
+          categoryId = v;
+        },
+      ),
+    );
+
+    var accountId = tx.accountId || '';
+    body.appendChild(
+      picker(
+        'Account',
+        [{ value: '', label: 'No account' }].concat(
+          (opts.accounts || []).map(function (a) {
+            return { value: a.id, label: a.label };
+          }),
+        ),
+        accountId,
+        function (v) {
+          accountId = v;
+        },
+      ),
+    );
+
+    var memberId = tx.memberId || '';
+    body.appendChild(
+      picker(
+        'Whose',
+        (opts.members || []).map(function (m) {
+          return { value: m.id, label: m.name };
+        }),
+        memberId,
+        function (v) {
+          memberId = v;
+        },
+      ),
+    );
+
+    box.appendChild(body);
+
+    var error = el('div', 'font:400 12px ' + SANS + ';color:#A6412B;margin-top:10px');
+    error.style.display = 'none';
+    box.appendChild(error);
+
+    function fail(text, input) {
+      error.textContent = text;
+      error.style.display = 'block';
+      if (input) input.focus();
+    }
+
+    var foot = el('div', 'display:flex;gap:8px;align-items:center;margin-top:16px');
+
+    var del = button('Delete', 'danger');
+    del.onclick = function () {
+      hide();
+      opts.onDelete();
+    };
+    foot.appendChild(del);
+    foot.appendChild(el('div', 'flex:1'));
+
+    var cancel = button('Cancel');
+    cancel.onclick = hide;
+
+    var save = button('Save', 'primary');
+    save.onclick = function () {
+      var text = name.input.value.trim();
+      var value = Number(String(amount.input.value).replace(/[^0-9.]/g, ''));
+      var when = String(date.input.value || '').trim();
+
+      if (!text) return fail('Give it a name.', name.input);
+      if (!isFinite(value) || value <= 0) return fail('The amount needs to be a number above zero.', amount.input);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(when)) return fail('Pick a date.', date.input);
+
+      hide();
+      opts.onSave({
+        merchant: text,
+        amount: kind === 'income' ? Math.abs(value) : -Math.abs(value),
+        date: when,
+        categoryId: categoryId || null,
+        accountId: accountId || null,
+        memberId: memberId || null,
+      });
+    };
+    foot.appendChild(cancel);
+    foot.appendChild(save);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+    name.input.focus();
+  }
+
   window.__hhUI = {
     status: status,
     message: message,
@@ -1482,6 +1687,7 @@
     categories: categories,
     settings: settings,
     recurring: recurring,
+    transaction: transaction,
     hide: hide,
   };
 })();
