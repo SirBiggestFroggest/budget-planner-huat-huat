@@ -492,6 +492,47 @@ const edits = [
     with: '!D&&l.jsx("button",{className:"btn sm",onClick:()=>g(z.id,z.balance),children:"Update"}),!D&&l.jsx("button",{className:"btn ghost sm",onClick:()=>window.__hh.removeAccount(t,z),title:"Remove this account",children:"✕"})]},z.id)',
   },
 
+  {
+    why: 'A repeating salary never appeared anywhere offering to log it',
+    // A recurring item is a schedule, not an entry: the money only reaches the
+    // ledger when someone logs it. Reminders were built from bills only, so a
+    // repeating salary was due, then late, and never once asked about. The only
+    // way to log it was Mark paid on the ranked table, which you would only
+    // find by going looking.
+    //
+    // Nothing here sums the list — the panel and the card count items and show
+    // each amount on its own row — so including income changes what is offered,
+    // not any total. The outflow maths ("still to come", safe to spend) is
+    // built from xm and qd and stays bills-only.
+    find: 'e.recurring.filter(i=>i.kind!=="income"&&!ql(i,t)&&xs(i,t))',
+    with: 'e.recurring.filter(i=>!ql(i,t)&&xs(i,t))',
+  },
+  {
+    why: '"Mark paid" is the wrong verb for a salary',
+    // `g` is the row's recurring item, destructured as {rec:g,...} just above.
+    find: 'onClick:()=>m(g.id),children:"Mark paid"',
+    with: 'onClick:()=>m(g.id),children:g.kind==="income"?"Mark received":"Mark paid"',
+  },
+
+  {
+    why: 'The ranked table called a salary the dearest thing you pay for',
+    // Once income joined this list, its top row stopped meaning "costliest".
+    // The headline figure beside it is still bills-only, so naming the salary
+    // here contradicted the number it sat next to.
+    find: 'd[0]&&` · dearest is ${d[0].rec.label.split(" — ")[0]}`',
+    with: 'd.find(T=>T.rec.kind!=="income")&&` · dearest is ${d.find(T=>T.rec.kind!=="income").rec.label.split(" — ")[0]}`',
+  },
+  {
+    why: 'The ranked table is no longer only things that cost you',
+    find: '"What it costs you, ranked"',
+    with: '"Everything that repeats, ranked"',
+  },
+  {
+    why: 'Ordering is by size now, in both directions',
+    find: '"Every repeating item, dearest first.',
+    with: '"Every repeating item, biggest first.',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
