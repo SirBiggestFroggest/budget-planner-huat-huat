@@ -472,6 +472,26 @@ const edits = [
     with: 'l.jsxs("td",{style:{whiteSpace:"nowrap"},children:[l.jsx("button",{className:"btn ghost sm",onClick:()=>window.__hh.editTransaction(s,_),title:"Edit this entry",children:"✎"}),l.jsx("button",{className:"btn ghost sm",onClick:()=>p(_.id),title:_.thread.length?`${_.thread.length} message${_.thread.length===1?"":"s"}`:"Start a thread",children:_.thread.length?`💬${_.thread.length}`:"💬"})]})',
   },
 
+  {
+    why: 'An account could be added but never removed',
+    // There was no deleteAccount case at all — only addAccount and
+    // updateBalance — so a typo or a closed account stayed on the list and in
+    // net worth for good.
+    //
+    // Entries that pointed at it are detached, not deleted. Their amounts are
+    // real money that happened; dropping the rows would quietly change every
+    // total on the ledger. They keep their place and lose the account.
+    find: 'case"addAccount":return{...e,accounts:[...e.accounts,{...t.account,id:Re("acct")}]};',
+    with: 'case"deleteAccount":return{...e,accounts:e.accounts.filter(i=>i.id!==t.id),transactions:e.transactions.map(i=>i.accountId===t.id?{...i,accountId:null}:i),recurring:e.recurring.map(i=>i.accountId===t.id?{...i,accountId:null}:i)};case"addAccount":return{...e,accounts:[...e.accounts,{...t.account,id:Re("acct")}]};',
+  },
+  {
+    why: 'Nothing on an account row offered to remove it',
+    // `t` is this page's dispatch and `z` the row's account. `D` marks the row
+    // being edited inline, which already hides Update, and hides this too.
+    find: '!D&&l.jsx("button",{className:"btn sm",onClick:()=>g(z.id,z.balance),children:"Update"})]},z.id)',
+    with: '!D&&l.jsx("button",{className:"btn sm",onClick:()=>g(z.id,z.balance),children:"Update"}),!D&&l.jsx("button",{className:"btn ghost sm",onClick:()=>window.__hh.removeAccount(t,z),title:"Remove this account",children:"✕"})]},z.id)',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

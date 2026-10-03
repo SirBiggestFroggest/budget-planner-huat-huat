@@ -1962,6 +1962,59 @@
   }
 
   // -------------------------------------------------------------------------
+  // Removing an account
+  // -------------------------------------------------------------------------
+
+  /** The reducer had no deleteAccount case at all, so a typo or a closed
+   *  account sat on the list and in net worth permanently. */
+  function removeAccount(appDispatch, account) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState || freshState();
+    if (!account) return;
+
+    var txs = (state.transactions || []).filter(function (t) {
+      return t.accountId === account.id;
+    }).length;
+    var recs = (state.recurring || []).filter(function (r) {
+      return r.accountId === account.id;
+    }).length;
+
+    // Say exactly what is attached before it goes. The entries themselves are
+    // kept — their amounts are money that actually moved, and removing them
+    // would change every total on the ledger — so they are only detached.
+    var detail = 'It stops counting towards net worth.';
+    var parts = [];
+    if (txs) parts.push(txs + (txs === 1 ? ' entry' : ' entries'));
+    if (recs) parts.push(recs + (recs === 1 ? ' repeating item' : ' repeating items'));
+    if (parts.length) {
+      detail =
+        parts.join(' and ') +
+        ' ' +
+        (txs + recs === 1 ? 'is' : 'are') +
+        ' filed under it. They stay in the ledger with their amounts intact and' +
+        ' simply lose the account. It stops counting towards net worth.';
+    }
+
+    var balance = Number(account.balance) || 0;
+    if (balance) {
+      detail +=
+        ' Its balance of ' +
+        (balance < 0 ? '-' : '') +
+        '$' +
+        Math.abs(balance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+        ' goes with it.';
+    }
+
+    UI.message('Remove ' + (account.label || 'this account') + '?', detail, true, {
+      label: 'Remove',
+      onClick: function () {
+        dispatch({ t: 'deleteAccount', id: account.id });
+        UI.status((account.label || 'Account') + ' removed');
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // Editing a transaction
   // -------------------------------------------------------------------------
 
@@ -2226,6 +2279,7 @@
     openRecurring: openRecurring,
     maybeRepeat: maybeRepeat,
     editTransaction: openTransaction,
+    removeAccount: removeAccount,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 
