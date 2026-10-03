@@ -1962,6 +1962,101 @@
   }
 
   // -------------------------------------------------------------------------
+  // Logging repeating items on their day
+  // -------------------------------------------------------------------------
+  //
+  // A recurring item used to be a reminder only: the money reached the ledger
+  // when somebody pressed Log it. Asked for outright, that is now automatic —
+  // on its day each month a repeating item writes itself in, income adding and
+  // bills taking away.
+  //
+  // Three things keep it honest. It writes nothing it has not been told to:
+  // every entry comes from an item already on the Recurring page. It cannot
+  // double up, because `markRecurringLogged` records the month and refuses a
+  // month it already holds. And it never writes silently — each run says what
+  // it added, and the entries are ordinary rows you can edit or delete.
+
+  var AUTO_LOG_SWEEP = 10 * 60 * 1000;
+
+  /** Mirrors the bundle's own cadence rule, so what logs itself matches exactly
+   *  what the Recurring page was showing as due. Yearly firing in September is
+   *  the bundle's rule, not a choice made here. */
+  function cadenceAppliesTo(rec, month) {
+    var c = rec.cadence;
+    if (c === 'Monthly' || c === 'Every 2 weeks') return true;
+    var n = Number(month.slice(5, 7));
+    if (c === 'Quarterly') return n % 3 === 0;
+    return n === 9;
+  }
+
+  function daysInMonth(month) {
+    var parts = month.split('-').map(Number);
+    return new Date(parts[0], parts[1], 0).getDate();
+  }
+
+  function money(n) {
+    return (
+      (n < 0 ? '-' : '+') +
+      '$' +
+      Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    );
+  }
+
+  /** Writes every repeating item whose day has arrived this month and which has
+   *  not been logged yet. Safe to call as often as you like. */
+  function autoLogDue(appDispatch) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState;
+    if (!state || !dispatch || applyingRemote || signingOut) return 0;
+    if (!Array.isArray(state.recurring) || !state.recurring.length) return 0;
+
+    // The real clock, not state.today — a tab left open overnight still has
+    // yesterday's date stored, and the day arriving is the whole point.
+    var now = new Date();
+    var month = thisMonth();
+    var dayNow = now.getDate();
+    var added = [];
+
+    state.recurring.forEach(function (rec) {
+      if (!rec || !rec.id) return;
+      if (!cadenceAppliesTo(rec, month)) return;
+      if ((rec.loggedMonths || []).indexOf(month) !== -1) return;
+
+      var day = Math.min(Math.max(1, Math.round(Number(rec.day) || 1)), daysInMonth(month));
+      if (day > dayNow) return;
+
+      var amount = Number(rec.amount) || 0;
+      if (!amount) return;
+      var signed = rec.kind === 'income' ? Math.abs(amount) : -Math.abs(amount);
+      var label = String(rec.label || 'Repeating item').split(' — ')[0];
+
+      dispatch({
+        t: 'addTx',
+        tx: {
+          date: month + '-' + String(day).padStart(2, '0'),
+          merchant: label,
+          categoryId: rec.categoryId || null,
+          accountId: rec.accountId || null,
+          memberId: rec.memberId || null,
+          amount: signed,
+          reviewed: true,
+          autoLogged: true,
+        },
+      });
+      dispatch({ t: 'markRecurringLogged', id: rec.id, month: month, txId: '' });
+      added.push(label + ' ' + money(signed));
+    });
+
+    if (added.length) {
+      UI.status(
+        (added.length === 1 ? 'Logged ' : 'Logged ' + added.length + ' repeating items — ') +
+          added.join(', '),
+      );
+    }
+    return added.length;
+  }
+
+  // -------------------------------------------------------------------------
   // Removing an account
   // -------------------------------------------------------------------------
 
@@ -2127,10 +2222,24 @@
     if (!started) {
       started = true;
       start();
+      // The first state is the one just loaded, and a sync may still be on its
+      // way in. Sweeping immediately could log against a ledger that is about
+      // to be replaced, so wait for it to settle, then keep a slow heartbeat so
+      // a tab left open still catches the day turning over.
+      window.setTimeout(function () {
+        autoLogDue();
+      }, 1500);
+      window.setInterval(function () {
+        autoLogDue();
+      }, AUTO_LOG_SWEEP);
       return;
     }
 
     if (applyingRemote || signingOut) return;
+
+    // Idempotent: anything already logged for this month is skipped, so the
+    // dispatches this makes settle after one extra pass.
+    autoLogDue();
 
     if (sb && user) {
       writeMeta({ localChangedAt: new Date().toISOString() });
@@ -2280,6 +2389,7 @@
     maybeRepeat: maybeRepeat,
     editTransaction: openTransaction,
     removeAccount: removeAccount,
+    autoLogDue: autoLogDue,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
 
