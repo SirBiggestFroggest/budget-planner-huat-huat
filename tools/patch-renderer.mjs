@@ -533,6 +533,44 @@ const edits = [
     with: '"Every repeating item, biggest first.',
   },
 
+  {
+    why: 'The calendar could only ever show one month',
+    // The topbar stepper is clamped to months the ledger already holds —
+    // `disabled: f<=0` and `f>=months.length-1` — so a ledger that knows only
+    // October cannot be shown November at all. The calendar inherited that and
+    // was stuck on a single month.
+    //
+    // It gets its own month instead of unlocking the global one. Stepping the
+    // page month would have to invent months in the ledger to keep the Budget
+    // page coherent; this only changes what this one card draws, so browsing
+    // ahead writes nothing. It follows the page month until you step it, and
+    // offers Back once you have wandered off.
+    find: ',f=ot(t.today)===n?Vr(t.today):void 0,x=t.recurring.filter(g=>i==="all"||g.memberId===i),',
+    with: ',[hhCalM,hhCalSet]=E.useState(n),hhCalSync=E.useEffect(()=>{hhCalSet(n)},[n]),hhShift=(m,d)=>{const[A,B]=m.split("-").map(Number),D=new Date(A,B-1+d,1);return D.getFullYear()+"-"+String(D.getMonth()+1).padStart(2,"0")},f=ot(t.today)===hhCalM?Vr(t.today):void 0,x=t.recurring.filter(g=>i==="all"||g.memberId===i),',
+  },
+  {
+    why: 'Calendar cells must be built for the month being looked at',
+    find: 'c=Array.from({length:Jl(n)},(g,C)=>({day:C+1,items:x.filter(S=>S.day===C+1&&xs(S,n)).map(S=>({id:S.id,label:S.label,amount:S.amount,color:ke(t,S.memberId).color,logged:ql(S,n)}))})).filter(g=>g.items.length)',
+    with: 'c=Array.from({length:Jl(hhCalM)},(g,C)=>({day:C+1,items:x.filter(S=>S.day===C+1&&xs(S,hhCalM)).map(S=>({id:S.id,label:S.label,amount:S.amount,color:ke(t,S.memberId).color,logged:ql(S,hhCalM)}))})).filter(g=>g.items.length)',
+  },
+  {
+    why: 'The calendar heading should name the month on screen',
+    find: 'l.jsx(V,{title:`${se(n)} calendar`',
+    with: 'l.jsx(V,{title:`${se(hhCalM)} calendar`',
+  },
+  {
+    why: 'The grid itself needs the viewed month for its weekday offsets',
+    // `today` is already guarded above, so the highlight only appears when the
+    // month on screen really is the current one.
+    find: 'l.jsx(Xm,{month:n,cells:c,today:f})',
+    with: 'l.jsx(Xm,{month:hhCalM,cells:c,today:f})',
+  },
+  {
+    why: 'Nothing on the calendar offered to move a month',
+    find: 'right:l.jsxs("div",{className:"row",style:{gap:5},children:[l.jsx(ue,{on:i==="all",onClick:()=>o("all"),children:"All"}),t.members.map(g=>l.jsx(ue,{on:i===g.id,color:g.color,onClick:()=>o(g.id),children:g.name},g.id))]})',
+    with: 'right:l.jsxs("div",{className:"row",style:{gap:5},children:[l.jsx("button",{className:"btn ghost sm",onClick:()=>hhCalSet(hhShift(hhCalM,-1)),"aria-label":"Previous month",children:"‹"}),l.jsx("button",{className:"btn ghost sm",onClick:()=>hhCalSet(hhShift(hhCalM,1)),"aria-label":"Next month",children:"›"}),hhCalM!==n&&l.jsx("button",{className:"btn ghost sm",onClick:()=>hhCalSet(n),children:"Back"}),l.jsx(ue,{on:i==="all",onClick:()=>o("all"),children:"All"}),t.members.map(g=>l.jsx(ue,{on:i===g.id,color:g.color,onClick:()=>o(g.id),children:g.name},g.id))]})',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

@@ -296,6 +296,26 @@
 }
 
 /* --------------------------------------------------------------------------
+ * Card headers with controls
+ * --------------------------------------------------------------------------
+ *
+ * The calendar's header now carries month arrows alongside the lens chips, and
+ * on a narrow card that extra width squeezed the title until "November 2026
+ * calendar" broke across three lines. Letting the head wrap puts the controls
+ * on their own row instead, and the controls themselves never wrap mid-group.
+ */
+
+.card-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.card-head > .row {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
  * Modals
  * --------------------------------------------------------------------------
  *
