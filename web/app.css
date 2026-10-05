@@ -345,3 +345,66 @@
 .modal-foot {
   z-index: 2;
 }
+
+/* --------------------------------------------------------------------------
+ * Cat paw cursors
+ * --------------------------------------------------------------------------
+ *
+ * The pack ships .cur and .ani files. Neither is a safe thing to hand a
+ * browser: .ani is not supported at all, and .cur is refused by Safari. They
+ * are converted to PNG at build time instead, which every browser accepts, and
+ * each one carries the hotspot that was stored in the .cur header — so the
+ * click lands on the paw's point rather than the corner of the image.
+ */
+
+html,
+body {
+  cursor: url('cursors/paw.png') 3 1, auto;
+}
+
+/* Anything you click.
+ *
+ * `!important` is load-bearing here. The bundle writes `cursor: pointer` as an
+ * inline style on several labels and rows, and an inline style beats an
+ * ordinary stylesheet rule no matter how specific it is — so without this those
+ * exact spots would be the ones that kept the system arrow. The two attribute
+ * selectors catch them whichever way React spaces the declaration out. */
+a[href],
+button,
+select,
+summary,
+[role='button'],
+.btn,
+.navitem,
+.chip,
+.seg button,
+input[type='checkbox'],
+input[type='radio'],
+input[type='button'],
+input[type='submit'],
+input[type='date'],
+[style*='cursor:pointer'],
+[style*='cursor: pointer'] {
+  cursor: url('cursors/paw-point.png') 3 1, pointer !important;
+}
+
+/* Where you type. A paw over a text field would hide the caret position, so
+   this one keeps the I-beam's shape and only changes its coat. */
+input[type='text'],
+input[type='email'],
+input[type='search'],
+input[type='number'],
+input[type='password'],
+input:not([type]),
+textarea,
+[contenteditable='true'] {
+  cursor: url('cursors/paw-text.png') 7 8, text !important;
+}
+
+/* Nothing to click. Left as the system cursor: a paw that looks identical to
+   the clickable one would promise something the control cannot do. */
+button:disabled,
+.btn:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed !important;
+}
