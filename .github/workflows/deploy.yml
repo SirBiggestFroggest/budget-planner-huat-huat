@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 # The site is static, so there is nothing to compile. The one build step
 # regenerates web/assets/ from vendor/ via tools/patch-renderer.mjs, which also
-# re-asserts that all 34 bundle edits still apply — so a broken patch fails the
+# re-asserts that every bundle edit still applies — so a broken patch fails the
 # deploy rather than shipping a half-patched bundle.
 
 on:
