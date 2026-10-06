@@ -537,8 +537,12 @@ Deno.serve(async (req: Request) => {
       // Read-only? Run it here and let the model carry on. Anything that would
       // change the ledger is returned instead, for a person to confirm.
       if (LOOKUPS.has(call.name)) {
-        if (hop >= MAX_LOOKUPS) {
-          console.error('[assistant] lookup limit reached, answering without', call.name);
+        // Asked once too often: nudge it to answer. `hop` has to rise here too —
+        // without that the nudge could be given forever to a model that keeps
+        // asking, which is an endless loop ending in the 150s idle timeout.
+        if (hop === MAX_LOOKUPS) {
+          hop += 1;
+          console.error('[assistant] lookup limit reached, nudging past', call.name);
           contents.push({
             role: 'user',
             parts: [{ text: 'You have looked things up enough. Answer with what you have.' }],
@@ -547,17 +551,41 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
+        // Nudged and still asking. Stop and say so rather than loop.
+        if (hop > MAX_LOOKUPS) {
+          console.error('[assistant] still calling', call.name, 'after the nudge; giving up');
+          return json({
+            ok: true,
+            model,
+            text: text || 'I could not finish looking that up. Ask me again in a moment.',
+          });
+        }
+
         hop += 1;
         lookups += 1;
         const result = await runLookup(call.name, (call.args ?? {}) as Record<string, unknown>);
 
         // Both halves are required: the model's own call, then its result.
         // Sending only the result leaves a reply that answers nothing.
-        // contents was inferred from text-only turns, so these two parts are
-        // widened rather than fought with; Deno typechecks on deploy and would
-        // otherwise refuse the function.
+        // contents was inferred from text-only turns, so these parts are widened
+        // rather than fought with; Deno typechecks on deploy and would otherwise
+        // refuse the function.
         const turns = contents as Array<Record<string, unknown>>;
-        turns.push({ role: 'model', parts: [{ functionCall: call }] });
+
+        // The model's turn goes back exactly as it arrived. Rebuilding it as
+        // { functionCall: call } looks equivalent and is not: a thinking model
+        // attaches a thoughtSignature to that part, and sending the call back
+        // without it is refused outright —
+        //   "Function call is missing a thought_signature in functionCall
+        //    parts ... function call `default_api:get_quote`, position 2"
+        // Passing the whole content through also keeps any text or thought
+        // parts that sat beside the call.
+        const modelTurn = data?.candidates?.[0]?.content;
+        turns.push(
+          modelTurn && Array.isArray(modelTurn.parts)
+            ? modelTurn
+            : { role: 'model', parts: [{ functionCall: call }] },
+        );
         turns.push({
           role: 'user',
           parts: [{ functionResponse: { name: call.name, response: result } }],
