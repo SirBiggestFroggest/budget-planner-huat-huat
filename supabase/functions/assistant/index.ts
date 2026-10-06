@@ -477,13 +477,20 @@ Deno.serve(async (req: Request) => {
 
   let lastStatus = 0;
   let lookups = 0;
+  let upstreamDetail = '';
 
-  // A lookup `continue`s to re-ask, so the same model is tried again with the
-  // result in hand; without repeating the list a lookup would push the answer
-  // onto the next model each time and fall off the end after three.
-  const chain = MODELS.flatMap((m) => [m, ...Array(MAX_LOOKUPS + 1).fill(m)]);
-
-  for (const model of chain) {
+  // Two loops, not one flattened list. A lookup has to re-ask the *same* model
+  // with the result in hand, while a failure has to move on to the next one —
+  // and a single list cannot tell those apart. Repeating each model in the list
+  // instead made every genuine failure take four times as long, which turned a
+  // couple of slow models into a 150-second idle timeout.
+  // Labelled, because the inner loop means "ask this model again" and some
+  // failures have to leave both loops at once. Without the label the retryable
+  // branch below would re-ask the same failing model forever.
+  outer: for (const model of MODELS) {
+    let hop = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
     let res: Response;
     try {
       res = await fetch(endpointFor(model), {
@@ -496,17 +503,26 @@ Deno.serve(async (req: Request) => {
     } catch (err) {
       console.error('[assistant] network failure on', model, err instanceof Error ? err.message : err);
       lastStatus = 0;
-      continue;
+      break;
     }
 
     if (!res.ok) {
       lastStatus = res.status;
-      console.error('[assistant] gemini', res.status, 'on', model, (await res.text()).slice(0, 300));
-      // 404 = model gone for this key, 429/503 = busy. Both are worth retrying
+      // Keep what Gemini actually said. A 400 is usually a malformed request,
+      // and reporting it as "check your key" sends you to look at the one thing
+      // that is demonstrably fine — which is exactly how this was first
+      // misdiagnosed.
+      upstreamDetail = (await res.text()).slice(0, 400);
+      console.error('[assistant] gemini', res.status, 'on', model, upstreamDetail);
+      // 404 = model gone for this key, 429/503 = busy. Both are worth trying
       // on the next model. A 400 or 403 is about the request or the key itself,
       // so another model will fail identically — stop and report.
-      if (res.status === 400 || res.status === 401 || res.status === 403) break;
-      continue;
+      // A 400 or 403 is the request or the key: every other model fails the
+      // same way, so stop asking.
+      if (res.status === 400 || res.status === 401 || res.status === 403) break outer;
+      // 404 = gone for this key, 429/503 = busy. Worth trying the next model,
+      // never worth hammering this one.
+      break;
     }
 
     const data = await res.json();
@@ -521,7 +537,7 @@ Deno.serve(async (req: Request) => {
       // Read-only? Run it here and let the model carry on. Anything that would
       // change the ledger is returned instead, for a person to confirm.
       if (LOOKUPS.has(call.name)) {
-        if (lookups >= MAX_LOOKUPS) {
+        if (hop >= MAX_LOOKUPS) {
           console.error('[assistant] lookup limit reached, answering without', call.name);
           contents.push({
             role: 'user',
@@ -531,6 +547,7 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
+        hop += 1;
         lookups += 1;
         const result = await runLookup(call.name, (call.args ?? {}) as Record<string, unknown>);
 
@@ -563,7 +580,7 @@ Deno.serve(async (req: Request) => {
     if (!text) {
       lastStatus = 502;
       console.error('[assistant] empty candidate on', model, 'finish:', data?.candidates?.[0]?.finishReason);
-      continue;
+      break;
     }
 
     if (jsonOnly) {
@@ -571,11 +588,12 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, model, result: JSON.parse(text) });
       } catch {
         lastStatus = 502;
-        continue;
+        break;
       }
     }
 
     return json({ ok: true, model, text });
+    }
   }
 
   return json(
@@ -583,9 +601,12 @@ Deno.serve(async (req: Request) => {
       error: 'UPSTREAM',
       status: lastStatus,
       message:
-        lastStatus === 400 || lastStatus === 401 || lastStatus === 403
-          ? 'Gemini rejected the request — check that GEMINI_API_KEY is valid.'
-          : 'Every model was unavailable just now. Try again in a moment.',
+        lastStatus === 401 || lastStatus === 403
+          ? 'Gemini refused the key. Check GEMINI_API_KEY.'
+          : lastStatus === 400
+            ? 'Gemini rejected the request itself. The reason is in `detail`.'
+            : 'Every model was unavailable just now. Try again in a moment.',
+      detail: upstreamDetail || undefined,
     },
     502,
   );
