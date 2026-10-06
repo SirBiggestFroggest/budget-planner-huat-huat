@@ -1286,7 +1286,7 @@
     box.style.display = 'grid';
     box.style.gridTemplateRows = 'auto 1fr auto auto';
 
-    box.appendChild(heading('Edit repeating item', 24));
+    box.appendChild(heading(opts.title || 'Edit repeating item', 24));
 
     var body = el('div', 'display:grid;gap:13px;overflow-y:auto;padding-right:4px;align-content:start');
 
@@ -1431,12 +1431,16 @@
 
     var foot = el('div', 'display:flex;gap:8px;align-items:center;margin-top:16px');
 
-    var del = button('Delete', 'danger');
-    del.onclick = function () {
-      hide();
-      opts.onDelete();
-    };
-    foot.appendChild(del);
+    // Creating something has nothing to delete yet, and a Delete button on an
+    // empty form invites exactly one kind of mistake.
+    if (!opts.hideDelete) {
+      var del = button('Delete', 'danger');
+      del.onclick = function () {
+        hide();
+        opts.onDelete();
+      };
+      foot.appendChild(del);
+    }
     foot.appendChild(el('div', 'flex:1'));
 
     var cancel = button('Cancel');

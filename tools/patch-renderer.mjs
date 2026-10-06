@@ -571,6 +571,60 @@ const edits = [
     with: 'right:l.jsxs("div",{className:"row",style:{gap:5},children:[l.jsx("button",{className:"btn ghost sm",onClick:()=>hhCalSet(hhShift(hhCalM,-1)),"aria-label":"Previous month",children:"‹"}),l.jsx("button",{className:"btn ghost sm",onClick:()=>hhCalSet(hhShift(hhCalM,1)),"aria-label":"Next month",children:"›"}),hhCalM!==n&&l.jsx("button",{className:"btn ghost sm",onClick:()=>hhCalSet(n),children:"Back"}),l.jsx(ue,{on:i==="all",onClick:()=>o("all"),children:"All"}),t.members.map(g=>l.jsx(ue,{on:i===g.id,color:g.color,onClick:()=>o(g.id),children:g.name},g.id))]})',
   },
 
+  {
+    why: 'A budget line could hold a planned amount and nothing else',
+    // Percentages and a need/want label have to live somewhere, and addBudgetLine
+    // already spreads whatever it is handed — but nothing could edit a line after
+    // it existed. setPlanned writes one field and only that field.
+    find: 'case"setPlanned":',
+    with: 'case"updateBudgetLine":return xn(e,t.month,i=>({...i,lines:i.lines.map(o=>o.id===t.lineId?{...o,...t.patch}:o)}));case"setPlanned":',
+  },
+  {
+    why: 'The plan had no sense of what share of income a line should be',
+    // Expected income first: a target read against money already logged would
+    // read as a wild percentage on the 2nd of the month and settle down by the
+    // 30th. Recurring income normalised to a month is stable from day one, and
+    // actual income is the fallback for a ledger that has no salary set up.
+    find: 'function ug(){const{s:e,month:t,dispatch:n,toast:r,go:s}=oe(),[i,o]=E.useState(!1),a=Rr(e,t),u=Xo(e,t),',
+    with: 'function ug(){const{s:e,month:t,dispatch:n,toast:r,go:s}=oe(),[i,o]=E.useState(!1),a=Rr(e,t),u=Xo(e,t),hhInc=(()=>{const R=e.recurring.filter(z=>z.kind==="income").reduce((z,Z)=>z+zn(Z),0);return R>0?R:qn(e,t)})(),',
+  },
+  {
+    why: 'Target and Type columns',
+    // Two columns rather than replacing Planned: the dollars stay the budget, the
+    // percentage is the target to judge them against.
+    find: 'l.jsx("th",{style:{width:110},children:"Planned"}),',
+    with: 'l.jsx("th",{style:{width:110},children:"Planned"}),l.jsx("th",{style:{width:118},children:"Target"}),l.jsx("th",{style:{width:96},children:"Type"}),',
+  },
+  {
+    why: 'The target and type cells themselves',
+    find: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),',
+    with: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),l.jsxs("td",{children:[l.jsxs("div",{className:"row",style:{gap:3},children:[l.jsx("input",{className:"input",style:{width:48,padding:"4px 6px",fontSize:12},defaultValue:d.pct??"",placeholder:"—",inputMode:"decimal",onBlur:T=>{const V=Number(String(T.target.value).replace(/[^0-9.]/g,""));n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{pct:isFinite(V)&&V>0?V:null}})}}),l.jsx("span",{className:"hint",children:"%"})]}),l.jsx("div",{className:"hint num",style:{marginTop:3},children:d.pct&&hhInc>0?w(hhInc*d.pct/100):"—"}),d.lo!=null&&l.jsx("div",{className:"hint",children:`${d.lo}–${d.hi}%`})]}),l.jsx("td",{children:l.jsxs("select",{className:"input",style:{padding:"4px 6px",fontSize:12,width:"100%"},value:d.kind??"",onChange:T=>n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{kind:T.target.value||null}}),children:[l.jsx("option",{value:"",children:"—"}),l.jsx("option",{value:"need",children:"Need"}),l.jsx("option",{value:"want",children:"Want"}),l.jsx("option",{value:"future",children:"Future"}),l.jsx("option",{value:"flex",children:"Flex"})]})}),',
+  },
+  {
+    why: 'The empty-table row spanned the old column count',
+    find: 'colSpan:6',
+    with: 'colSpan:8',
+  },
+
+  {
+    why: 'Nothing offered a starting set of categories to budget against',
+    // The button only asks for the plan; bridge.js owns the list and the work,
+    // because creating a group and then a line that points at it needs the id
+    // the reducer generates, which is not readable until the state comes back.
+    find: 'l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
+    with: 'l.jsx("button",{className:"btn sm",title:"Add the recommended categories, with a target share of income for each",onClick:()=>window.__hh.recommendedPlan(n,t),children:"Recommended split"}),l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
+  },
+
+  {
+    why: 'Nothing on Cash Flow offered to set up a salary',
+    // This page has no dispatch of its own — the component destructures only
+    // state and month — so the call goes through the bridge, which keeps a
+    // current dispatch from the save effect. The label reads the ledger so the
+    // button does not offer to create a second salary over the top of one.
+    find: 'l.jsx(V,{title:"Income sources",sub:`${w(s)} in ${se(t)}`})',
+    with: 'l.jsx(V,{title:"Income sources",sub:`${w(s)} in ${se(t)}`,right:l.jsx("button",{className:"btn sm",onClick:()=>window.__hh.setupSalary(),children:e.recurring.some(T=>T.kind==="income")?"Edit salary":"＋ Set up salary"})})',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

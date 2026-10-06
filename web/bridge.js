@@ -2057,6 +2057,238 @@
   }
 
   // -------------------------------------------------------------------------
+  // Salary
+  // -------------------------------------------------------------------------
+
+  /** A salary is just a repeating item that pays in, so this invents no second
+   *  mechanism — it fills the same form in with sensible answers and files the
+   *  result under Recurring, where the sweep then logs it on its day each month
+   *  without being asked. */
+  function setupSalary(appDispatch) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState || freshState();
+    if (!dispatch) return;
+
+    // Already have income coming in? Edit it rather than stack another on top.
+    var income = (state.recurring || []).filter(function (r) { return r.kind === 'income'; });
+    if (income.length) {
+      income.sort(function (a, b) { return Math.abs(b.amount) - Math.abs(a.amount); });
+      openRecurring(dispatch, income[0]);
+      return;
+    }
+
+    var groupOf = {};
+    (state.groups || []).forEach(function (g) { groupOf[g.id] = g.label; });
+
+    var account = (state.accounts || []).find(function (a) { return a.spendable; }) ||
+                  (state.accounts || [])[0] || null;
+    var paycheck = (state.categories || []).find(function (c) {
+      return c.groupId === 'income' && /pay|salar/i.test(c.label);
+    }) || (state.categories || []).find(function (c) { return c.groupId === 'income'; });
+
+    UI.recurring({
+      title: 'Set up your salary',
+      hideDelete: true,
+      item: {
+        label: 'Salary',
+        amount: 0,
+        day: 25,
+        cadence: 'Monthly',
+        kind: 'income',
+        categoryId: paycheck ? paycheck.id : null,
+        accountId: account ? account.id : null,
+        memberId: (state.session && state.session.memberId) ||
+                  ((state.members || [])[0] || {}).id || null,
+      },
+      cadences: CADENCES,
+      categories: (state.categories || []).map(function (c) {
+        return { id: c.id, label: c.label, group: groupOf[c.groupId] };
+      }),
+      accounts: (state.accounts || []).map(function (a) {
+        return { id: a.id, label: a.label };
+      }),
+      members: (state.members || []).map(function (m) {
+        return { id: m.id, name: m.name };
+      }),
+      onSave: function (patch) {
+        dispatch({
+          t: 'addRecurring',
+          rec: {
+            label: patch.label,
+            day: patch.day,
+            amount: Math.abs(patch.amount),
+            accountId: patch.accountId,
+            memberId: patch.memberId,
+            cadence: patch.cadence,
+            categoryId: patch.categoryId,
+            remindLead: 3,
+            remindOn: true,
+            kind: 'income',
+          },
+        });
+        UI.status(patch.label + ' set for the ' + patch.day + ' of each month');
+        // If the day has already gone by this month, log it now rather than
+        // leaving the month looking empty until the next one comes round.
+        window.setTimeout(function () { autoLogDue(); }, 60);
+      },
+      onDelete: function () {},
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A starting plan
+  // -------------------------------------------------------------------------
+  //
+  // Targets are shares of income rather than fixed sums, so the same plan holds
+  // whether you earn 3,000 or 30,000. The percentages total exactly 100.
+
+  var RECOMMENDED = [
+    { label: 'Rental',                 pct: 25, kind: 'need',   lo: 20, hi: 30 },
+    { label: 'Transport',              pct: 6,  kind: 'need',   lo: 4,  hi: 8  },
+    { label: 'Grocery',                pct: 9,  kind: 'need',   lo: 7,  hi: 12 },
+    { label: 'Fun',                    pct: 5,  kind: 'want',   lo: 3,  hi: 7  },
+    { label: 'Eating out',             pct: 7,  kind: 'want',   lo: 5,  hi: 9  },
+    { label: 'Subscriptions',          pct: 3,  kind: 'want',   lo: 2,  hi: 4  },
+    { label: 'Investment',             pct: 12, kind: 'future', lo: 10, hi: 20 },
+    { label: 'Saving',                 pct: 10, kind: 'future', lo: 10, hi: 15 },
+    { label: 'Bills & Utilities',      pct: 5,  kind: 'need',   lo: 4,  hi: 6  },
+    { label: 'Insurance',              pct: 4,  kind: 'need',   lo: 3,  hi: 6  },
+    { label: 'Education & Self-dev',   pct: 6,  kind: 'future', lo: 3,  hi: 8  },
+    { label: 'Health & Personal care', pct: 3,  kind: 'need',   lo: 2,  hi: 4  },
+    { label: 'Family/Gifts',           pct: 3,  kind: 'want',   lo: 0,  hi: 6  },
+    { label: 'Buffer/Misc',            pct: 2,  kind: 'flex',   lo: 1,  hi: 3  },
+  ];
+
+  var PLAN_COLOURS = ['#4F6E9A','#B0542C','#3F5A6E','#6E8F5A','#8A5A7A','#A88A2E','#7A7468','#C9A24A'];
+
+  /** A repeating amount expressed per month, matching the bundle's own rule. */
+  function perMonth(rec) {
+    var a = Number(rec.amount) || 0;
+    if (rec.cadence === 'Every 2 weeks') return (a * 26) / 12;
+    if (rec.cadence === 'Quarterly') return a / 3;
+    if (rec.cadence === 'Yearly') return a / 12;
+    return a;
+  }
+
+  /** What a percentage should be read against. Expected income first — a target
+   *  measured against money already logged reads as nonsense on the 2nd of the
+   *  month. Falls back to what has actually arrived. */
+  function monthlyIncome(state, month) {
+    var expected = (state.recurring || [])
+      .filter(function (r) { return r.kind === 'income'; })
+      .reduce(function (t, r) { return t + Math.abs(perMonth(r)); }, 0);
+    if (expected > 0) return expected;
+    return (state.transactions || [])
+      .filter(function (t) { return t.amount > 0 && String(t.date || '').slice(0, 7) === month; })
+      .reduce(function (t, x) { return t + x.amount; }, 0);
+  }
+
+  function norm(x) {
+    return String(x || '').trim().toLowerCase();
+  }
+
+  /** Adds the recommended categories to this month's plan.
+   *
+   *  Two passes, because a budget line has to point at a group's id and the
+   *  reducer makes that id itself — it cannot be known until the new state
+   *  comes back. Pass one creates the groups that are missing, then this waits
+   *  for them to appear before pass two writes the lines.
+   */
+  function recommendedPlan(appDispatch, month) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState;
+    if (!state || !dispatch) return;
+
+    var have = {};
+    (state.groups || []).forEach(function (g) { have[norm(g.label)] = g.id; });
+
+    var missing = RECOMMENDED.filter(function (r) { return !have[norm(r.label)]; });
+    missing.forEach(function (r, i) {
+      dispatch({ t: 'addGroup', label: r.label, color: PLAN_COLOURS[i % PLAN_COLOURS.length] });
+    });
+
+    var waited = 0;
+    (function settle() {
+      var now = latestState || state;
+      var byLabel = {};
+      (now.groups || []).forEach(function (g) { byLabel[norm(g.label)] = g; });
+
+      var ready = RECOMMENDED.every(function (r) { return byLabel[norm(r.label)]; });
+      if (!ready && waited < 2000) {
+        waited += 50;
+        window.setTimeout(settle, 50);
+        return;
+      }
+
+      var budget = (now.budgets || []).find(function (b) { return b.month === month; });
+      var existing = {};
+      ((budget && budget.lines) || []).forEach(function (l) {
+        if (l.groupId) existing[l.groupId] = l;
+      });
+
+      var income = monthlyIncome(now, month);
+      var added = 0;
+      var updated = 0;
+
+      RECOMMENDED.forEach(function (r) {
+        var g = byLabel[norm(r.label)];
+        if (!g) return;
+
+        // A group you already budget for keeps its line and its planned amount —
+        // that figure was a decision, not a default. It only gains the target and
+        // the type it was missing, so the whole plan can be read the same way.
+        var line = existing[g.id];
+        if (line) {
+          if (line.pct == null || line.kind == null) {
+            dispatch({
+              t: 'updateBudgetLine',
+              month: month,
+              lineId: line.id,
+              patch: { pct: r.pct, kind: r.kind, lo: r.lo, hi: r.hi },
+            });
+            updated += 1;
+          }
+          return;
+        }
+
+        dispatch({
+          t: 'addBudgetLine',
+          month: month,
+          line: {
+            groupId: g.id,
+            label: g.label,
+            color: g.color,
+            planned: income > 0 ? Math.round((income * r.pct) / 100) : 0,
+            pct: r.pct,
+            kind: r.kind,
+            lo: r.lo,
+            hi: r.hi,
+          },
+        });
+        added += 1;
+      });
+
+      var parts = [];
+      if (added) parts.push('added ' + added);
+      if (updated) parts.push('gave a target to ' + updated + ' you already had');
+
+      if (!parts.length) {
+        UI.status('Every recommended category is already in the plan');
+      } else if (income > 0) {
+        UI.status(
+          'Plan updated: ' + parts.join(', ') + ' — costed against ' +
+          money(income).replace('+', '') + ' a month',
+        );
+      } else {
+        UI.status(
+          'Plan updated: ' + parts.join(', ') + '. Set up your salary under Recurring ' +
+          'and the targets turn into amounts.',
+        );
+      }
+    })();
+  }
+
+  // -------------------------------------------------------------------------
   // Removing an account
   // -------------------------------------------------------------------------
 
@@ -2389,6 +2621,8 @@
     maybeRepeat: maybeRepeat,
     editTransaction: openTransaction,
     removeAccount: removeAccount,
+    recommendedPlan: recommendedPlan,
+    setupSalary: setupSalary,
     autoLogDue: autoLogDue,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,
