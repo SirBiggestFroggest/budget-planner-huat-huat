@@ -705,7 +705,7 @@ const edits = [
     // stored value so a pull, or the chat, redraws it — an uncontrolled input
     // would otherwise sit there showing the figure it had when it mounted.
     find: 'l.jsx("th",{style:{width:110,textAlign:"right"},children:"Put in"}),',
-    with: 'l.jsx("th",{style:{width:110,textAlign:"right"},children:"Put in"}),l.jsx("th",{style:{width:122,textAlign:"right"},children:"Price"}),',
+    with: 'l.jsx("th",{style:{width:"9%",textAlign:"right"},children:"Put in"}),l.jsx("th",{style:{width:"11%",textAlign:"right"},children:"Price"}),',
   },
   {
     why: 'The price cell itself',
@@ -730,6 +730,122 @@ const edits = [
     why: 'The empty-holdings row spanned the old column count',
     find: 'colSpan:7',
     with: 'colSpan:8',
+  },
+
+  // Holdings in shares of the table, not pixels. The first column had no width
+  // at all, so when the actions column gained a third button and overflowed its
+  // 130px, the only column free to give way was the one holding the name — it
+  // collapsed to a few characters and every row grew five lines tall.
+  // 21 + 9 + 13 + 9 + 11 + 13 + 11 + 13 = 100.
+  {
+    why: 'Holdings column as a share of the table',
+    find: 'l.jsx("th",{style:{width:90},children:"Whose"})',
+    with: 'l.jsx("th",{style:{width:"9%"},children:"Whose"})',
+  },
+  {
+    why: 'Holdings column as a share of the table',
+    find: 'l.jsx("th",{style:{width:130},children:"Account"})',
+    with: 'l.jsx("th",{style:{width:"13%"},children:"Account"})',
+  },
+  {
+    why: 'Holdings column as a share of the table',
+    find: 'l.jsx("th",{style:{width:180,textAlign:"right"},children:"Worth today"})',
+    with: 'l.jsx("th",{style:{width:"13%",textAlign:"right"},children:"Worth today"})',
+  },
+  {
+    why: 'Holdings column as a share of the table',
+    find: 'l.jsx("th",{style:{width:130,textAlign:"right"},children:"Growth"})',
+    with: 'l.jsx("th",{style:{width:"11%",textAlign:"right"},children:"Growth"})',
+  },
+  {
+    why: 'Holdings column as a share of the table',
+    find: 'l.jsx("th",{style:{width:130}})',
+    with: 'l.jsx("th",{style:{width:"13%"}})',
+  },
+  {
+    why: 'The holdings name column had no width of its own',
+    find: 'l.jsx("th",{children:"Holding"}),',
+    with: 'l.jsx("th",{style:{width:"21%"},children:"Holding"}),',
+  },
+
+  // The last two tables still in pixels. Shares of the table instead, so a
+  // column keeps its proportion whatever the window does rather than holding a
+  // constant size while everything around it moves.
+  // Transactions 4+24+17+16+7+13+11+8 = 100. Recurring 5+23+10+12+14+12+10+14 = 100.
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{children:"Merchant"}),',
+    with: 'l.jsx("th",{style:{width:"24%"},children:"Merchant"}),',
+  },
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{children:"Category"}),',
+    with: 'l.jsx("th",{style:{width:"17%"},children:"Category"}),',
+  },
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{children:"Account"}),',
+    with: 'l.jsx("th",{style:{width:"16%"},children:"Account"}),',
+  },
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{style:{width:60},children:"Who"}),',
+    with: 'l.jsx("th",{style:{width:"7%"},children:"Who"}),',
+  },
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{style:{textAlign:"right"},children:"Amount"}),',
+    with: 'l.jsx("th",{style:{width:"13%",textAlign:"right"},children:"Amount"}),',
+  },
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{style:{width:84},children:"Date"}),',
+    with: 'l.jsx("th",{style:{width:"11%"},children:"Date"}),',
+  },
+  {
+    why: 'Transactions column as a share of the table',
+    find: 'l.jsx("th",{style:{width:40}})',
+    with: 'l.jsx("th",{style:{width:"8%"}})',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:40},children:"#"}),',
+    with: 'l.jsx("th",{style:{width:"5%"},children:"#"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{children:"Item"}),',
+    with: 'l.jsx("th",{style:{width:"23%"},children:"Item"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:90},children:"Who"}),',
+    with: 'l.jsx("th",{style:{width:"10%"},children:"Who"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:120},children:"Cadence"}),',
+    with: 'l.jsx("th",{style:{width:"12%"},children:"Cadence"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:120},children:"Account"}),',
+    with: 'l.jsx("th",{style:{width:"14%"},children:"Account"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:110,textAlign:"right"},children:a==="month"?"A month":"A year"}),',
+    with: 'l.jsx("th",{style:{width:"12%",textAlign:"right"},children:a==="month"?"A month":"A year"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:110,textAlign:"right"},children:"Share"}),',
+    with: 'l.jsx("th",{style:{width:"10%",textAlign:"right"},children:"Share"}),',
+  },
+  {
+    why: 'Recurring column as a share of the table',
+    find: 'l.jsx("th",{style:{width:150}})',
+    with: 'l.jsx("th",{style:{width:"14%"}})',
   },
 
   // --- the logo -----------------------------------------------------------

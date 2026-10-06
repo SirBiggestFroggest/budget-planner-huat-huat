@@ -460,3 +460,57 @@
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Table cells
+ * --------------------------------------------------------------------------
+ *
+ * Every column is now a share of its table rather than a pixel count, so the
+ * proportions hold at any width. Three things still need saying in CSS.
+ *
+ * A row of buttons in the last column must be allowed to wrap. When Holdings
+ * gained a third button the row overflowed its column, and the only column free
+ * to give way was the one with no width of its own — the name collapsed to a
+ * few characters and every row grew five lines tall. Wrapping costs a line;
+ * overflowing costs the whole layout.
+ */
+
+.card table.tbl td .row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* A percentage is a share of what is there, and a share of a narrow screen is
+   still narrow. These floors stop the first column folding one word per line,
+   and are in rem so they follow the text rather than the device. */
+.card table.tbl th:first-child,
+.card table.tbl td:first-child {
+  min-width: 7rem;
+}
+
+/* Figures should never wrap: "$8,255" split across two lines reads as two
+   numbers. The cells that hold them say so. */
+.card table.tbl .num {
+  white-space: nowrap;
+}
+
+/* Long names get an ellipsis rather than pushing their column wider — the
+   column's share is the budget, and the text lives within it. */
+.card table.tbl td .ellip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  /* Tight screens: let the buttons stack rather than force a sideways scroll
+     through the whole table to reach them. */
+  .card table.tbl td .row {
+    justify-content: flex-end;
+  }
+
+  .card table.tbl th:first-child,
+  .card table.tbl td:first-child {
+    min-width: 5.5rem;
+  }
+}
