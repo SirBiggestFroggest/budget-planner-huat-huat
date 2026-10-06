@@ -586,7 +586,7 @@ const edits = [
     // 30th. Recurring income normalised to a month is stable from day one, and
     // actual income is the fallback for a ledger that has no salary set up.
     find: 'function ug(){const{s:e,month:t,dispatch:n,toast:r,go:s}=oe(),[i,o]=E.useState(!1),a=Rr(e,t),u=Xo(e,t),',
-    with: 'function ug(){const{s:e,month:t,dispatch:n,toast:r,go:s}=oe(),[i,o]=E.useState(!1),a=Rr(e,t),u=Xo(e,t),hhInc=(()=>{const R=e.recurring.filter(z=>z.kind==="income").reduce((z,Z)=>z+zn(Z),0);return R>0?R:qn(e,t)})(),',
+    with: 'function ug(){const{s:e,month:t,dispatch:n,toast:r,go:s}=oe(),[i,o]=E.useState(!1),[hhSort,hhSetSort]=E.useState("plan"),a=Rr(e,t),hhRows=Xo(e,t),u=hhSort==="plan"?hhRows:hhRows.slice().sort((A,B)=>hhSort==="planned-desc"?B.planned-A.planned:hhSort==="planned-asc"?A.planned-B.planned:hhSort==="actual-desc"?B.actual-A.actual:hhSort==="actual-asc"?A.actual-B.actual:0),hhInc=(()=>{const R=e.recurring.filter(z=>z.kind==="income").reduce((z,Z)=>z+zn(Z),0);return R>0?R:qn(e,t)})(),hhPct=u.reduce((A,B)=>A+(Number(B.pct)||0),0),',
   },
   {
     why: 'Target and Type columns',
@@ -598,7 +598,7 @@ const edits = [
   {
     why: 'The target and type cells themselves',
     find: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),',
-    with: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),l.jsxs("td",{children:[l.jsxs("div",{className:"row",style:{gap:3},children:[l.jsx("input",{className:"input",style:{width:"3.2em",minWidth:0,padding:"4px 6px",fontSize:12},defaultValue:d.pct??"",placeholder:"—",inputMode:"decimal",onBlur:T=>{const V=Number(String(T.target.value).replace(/[^0-9.]/g,""));n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{pct:isFinite(V)&&V>0?V:null}})}}),l.jsx("span",{className:"hint",children:"%"})]}),l.jsx("div",{className:"hint num",style:{marginTop:3},children:d.pct&&hhInc>0?w(hhInc*d.pct/100):"—"}),d.lo!=null&&l.jsx("div",{className:"hint",children:`${d.lo}–${d.hi}%`})]}),l.jsx("td",{children:l.jsxs("select",{className:"input",style:{padding:"4px 6px",fontSize:12,width:"100%"},value:d.kind??"",onChange:T=>n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{kind:T.target.value||null}}),children:[l.jsx("option",{value:"",children:"—"}),l.jsx("option",{value:"need",children:"Need"}),l.jsx("option",{value:"want",children:"Want"}),l.jsx("option",{value:"future",children:"Future"}),l.jsx("option",{value:"flex",children:"Flex"})]})}),',
+    with: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N});if(hhInc>0){const P=Math.round(N/hhInc*1e3)/10;n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{pct:P>0?P:null}}),r(`${d.label} planned at ${w(N)} — ${mt(P/100)} of income`)}else r(`${d.label} planned at ${w(N)}`)}})}),l.jsxs("td",{children:[l.jsxs("div",{className:"row",style:{gap:3},children:[l.jsx("input",{className:"input",style:{width:"3.2em",minWidth:0,padding:"4px 6px",fontSize:12},defaultValue:d.pct??"",key:"pct"+d.id+(d.pct??""),placeholder:"—",inputMode:"decimal",onBlur:T=>{const V=Number(String(T.target.value).replace(/[^0-9.]/g,""));const P=isFinite(V)&&V>0?V:null;n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{pct:P}});if(P!==null&&hhInc>0){const M=Math.round(hhInc*P/100);n({t:"setPlanned",month:t,lineId:d.id,planned:M}),r(`${d.label} set to ${P}% — ${w(M)}`)}}}),l.jsx("span",{className:"hint",children:"%"})]}),l.jsx("div",{className:"hint num",style:{marginTop:3},children:d.pct&&hhInc>0?w(hhInc*d.pct/100):"—"}),d.lo!=null&&l.jsx("div",{className:"hint",children:`${d.lo}–${d.hi}%`})]}),l.jsx("td",{children:l.jsxs("select",{className:"input",style:{padding:"4px 6px",fontSize:12,width:"100%"},value:d.kind??"",onChange:T=>n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{kind:T.target.value||null}}),children:[l.jsx("option",{value:"",children:"—"}),l.jsx("option",{value:"need",children:"Need"}),l.jsx("option",{value:"want",children:"Want"}),l.jsx("option",{value:"future",children:"Future"}),l.jsx("option",{value:"flex",children:"Flex"})]})}),',
   },
   {
     why: 'The empty-table row spanned the old column count',
@@ -665,6 +665,36 @@ const edits = [
     find: '["#4F6E9A","#B0542C","#3F5A6E","#6E8F5A","#8A5A7A","#A88A2E","#7A7468","#C9A24A"]',
     with: '["#4F6E9A","#BD7342","#359735","#883053","#32328F","#888830","#359097","#613F2E","#955CA3","#335B41","#B8474F","#376A25","#4E335B","#359769","#BD428C","#BD42BD"]',
     count: 2,
+  },
+
+  {
+    why: 'A line could be edited but never moved',
+    // Order is the order of the lines array, which nothing could change. Swapping
+    // with a neighbour is enough: repeated, it walks a line anywhere.
+    find: 'case"updateBudgetLine":',
+    with: 'case"moveBudgetLine":return xn(e,t.month,i=>{const o=i.lines.findIndex(c=>c.id===t.lineId);if(o<0)return i;const c=o+t.dir;if(c<0||c>=i.lines.length)return i;const g=i.lines.slice(),C=g[o];g[o]=g[c];g[c]=C;return{...i,lines:g}});case"updateBudgetLine":',
+  },
+  {
+    why: 'The totals row had six cells for eight columns',
+    // Target and Type were added above it and it was never widened, so the
+    // spending and remaining totals sat under Progress and Actual — off by two
+    // the whole time. It now carries the percentage total as well, which is the
+    // number that says whether the plan adds up to a whole income.
+    find: 'l.jsx("td",{className:"num",style:{fontWeight:700},children:w(h.planned)}),l.jsx("td",{}),',
+    with: 'l.jsx("td",{className:"num",style:{fontWeight:700},children:w(h.planned)}),l.jsxs("td",{children:[l.jsx("div",{className:"num",style:{fontWeight:700,color:hhPct>100.5?"var(--red)":hhPct>0&&hhPct<99.5?"var(--ink-3)":"inherit"},children:mt(hhPct/100)}),hhInc>0&&l.jsx("div",{className:"hint num",children:w(hhInc*hhPct/100)})]}),l.jsx("td",{}),l.jsx("td",{}),',
+  },
+  {
+    why: 'Nothing let you put the important lines first',
+    find: 'l.jsx("td",{children:!d.groupId&&l.jsx("button",{className:"btn ghost sm danger",title:"Remove this line",onClick:()=>{n({t:"removeBudgetLine",month:t,lineId:d.id}),r(`${d.label} removed from the plan`)},children:"✕"})})',
+    with: 'l.jsx("td",{children:l.jsxs("div",{className:"row",style:{gap:2,justifyContent:"flex-end"},children:[hhSort==="plan"&&l.jsx("button",{className:"btn ghost sm",title:"Move up",onClick:()=>n({t:"moveBudgetLine",month:t,lineId:d.id,dir:-1}),children:"↑"}),hhSort==="plan"&&l.jsx("button",{className:"btn ghost sm",title:"Move down",onClick:()=>n({t:"moveBudgetLine",month:t,lineId:d.id,dir:1}),children:"↓"}),!d.groupId&&l.jsx("button",{className:"btn ghost sm danger",title:"Remove this line",onClick:()=>{n({t:"removeBudgetLine",month:t,lineId:d.id}),r(`${d.label} removed from the plan`)},children:"✕"})]})})',
+  },
+  {
+    why: 'No way to ask which lines are the big ones',
+    // Sorting is a view, not a change: it leaves the stored order alone, and the
+    // move arrows hide while it is on, since an arrow that reorders something
+    // you are not looking at would be a lie.
+    find: 'l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
+    with: 'l.jsxs("select",{className:"input",style:{padding:"5px 8px",fontSize:12},value:hhSort,onChange:T=>hhSetSort(T.target.value),title:"Order the plan",children:[l.jsx("option",{value:"plan",children:"My order"}),l.jsx("option",{value:"planned-desc",children:"Biggest budget"}),l.jsx("option",{value:"planned-asc",children:"Smallest budget"}),l.jsx("option",{value:"actual-desc",children:"Most spent"}),l.jsx("option",{value:"actual-asc",children:"Least spent"})]}),l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
   },
 
   // --- the logo -----------------------------------------------------------
