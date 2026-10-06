@@ -355,16 +355,29 @@
  * measured 648px inside a 606px card, which cut "Remaining" in half and put the
  * remove button somewhere no pointer could go.
  *
- * `display: block` on the table lets it scroll instead. The browser still
- * generates an anonymous table box around thead and tbody, so the columns stay
- * aligned with each other; only the outer element changes behaviour.
+ * `display: block` on the table was the wrong way to allow that. It kept the
+ * columns aligned, but it also detached the table from its container's width:
+ * the block box filled the card while the anonymous table box inside sized to
+ * its content, so the rows stopped 186px short of the card's edge and the right
+ * side of every row went ragged.
+ *
+ * The table keeps `display: table` and its full width. The card scrolls instead
+ * on the rare width where the contents genuinely will not fit.
  */
 
-.card table.tbl {
-  display: block;
+.card.flush {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
+}
+
+/* Columns are percentages of the table, so they share the width out rather than
+   holding a constant size while the screen changes around them. These two are
+   the exception: they hold a control, not text, and below about 2.5em the box
+   is too small to click rather than merely tight. */
+.tbl-budget input,
+.tbl-budget select {
+  max-width: 100%;
 }
 
 /* --------------------------------------------------------------------------

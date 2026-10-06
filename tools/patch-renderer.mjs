@@ -593,12 +593,12 @@ const edits = [
     // Two columns rather than replacing Planned: the dollars stay the budget, the
     // percentage is the target to judge them against.
     find: 'l.jsx("th",{style:{width:110},children:"Planned"}),',
-    with: 'l.jsx("th",{style:{width:96},children:"Planned"}),l.jsx("th",{style:{width:100},children:"Target"}),l.jsx("th",{style:{width:82},children:"Type"}),',
+    with: 'l.jsx("th",{style:{width:"11%"},children:"Planned"}),l.jsx("th",{style:{width:"13%"},children:"Target"}),l.jsx("th",{style:{width:"11%"},children:"Type"}),',
   },
   {
     why: 'The target and type cells themselves',
     find: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),',
-    with: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),l.jsxs("td",{children:[l.jsxs("div",{className:"row",style:{gap:3},children:[l.jsx("input",{className:"input",style:{width:48,padding:"4px 6px",fontSize:12},defaultValue:d.pct??"",placeholder:"—",inputMode:"decimal",onBlur:T=>{const V=Number(String(T.target.value).replace(/[^0-9.]/g,""));n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{pct:isFinite(V)&&V>0?V:null}})}}),l.jsx("span",{className:"hint",children:"%"})]}),l.jsx("div",{className:"hint num",style:{marginTop:3},children:d.pct&&hhInc>0?w(hhInc*d.pct/100):"—"}),d.lo!=null&&l.jsx("div",{className:"hint",children:`${d.lo}–${d.hi}%`})]}),l.jsx("td",{children:l.jsxs("select",{className:"input",style:{padding:"4px 6px",fontSize:12,width:"100%"},value:d.kind??"",onChange:T=>n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{kind:T.target.value||null}}),children:[l.jsx("option",{value:"",children:"—"}),l.jsx("option",{value:"need",children:"Need"}),l.jsx("option",{value:"want",children:"Want"}),l.jsx("option",{value:"future",children:"Future"}),l.jsx("option",{value:"flex",children:"Flex"})]})}),',
+    with: 'l.jsx("td",{children:l.jsx(Su,{value:((j=a.lines.find(N=>N.id===d.id))==null?void 0:j.planned)??d.planned,onCommit:N=>{n({t:"setPlanned",month:t,lineId:d.id,planned:N}),r(`${d.label} planned at ${w(N)}`)}})}),l.jsxs("td",{children:[l.jsxs("div",{className:"row",style:{gap:3},children:[l.jsx("input",{className:"input",style:{width:"3.2em",minWidth:0,padding:"4px 6px",fontSize:12},defaultValue:d.pct??"",placeholder:"—",inputMode:"decimal",onBlur:T=>{const V=Number(String(T.target.value).replace(/[^0-9.]/g,""));n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{pct:isFinite(V)&&V>0?V:null}})}}),l.jsx("span",{className:"hint",children:"%"})]}),l.jsx("div",{className:"hint num",style:{marginTop:3},children:d.pct&&hhInc>0?w(hhInc*d.pct/100):"—"}),d.lo!=null&&l.jsx("div",{className:"hint",children:`${d.lo}–${d.hi}%`})]}),l.jsx("td",{children:l.jsxs("select",{className:"input",style:{padding:"4px 6px",fontSize:12,width:"100%"},value:d.kind??"",onChange:T=>n({t:"updateBudgetLine",month:t,lineId:d.id,patch:{kind:T.target.value||null}}),children:[l.jsx("option",{value:"",children:"—"}),l.jsx("option",{value:"need",children:"Need"}),l.jsx("option",{value:"want",children:"Want"}),l.jsx("option",{value:"future",children:"Future"}),l.jsx("option",{value:"flex",children:"Flex"})]})}),',
   },
   {
     why: 'The empty-table row spanned the old column count',
@@ -632,17 +632,17 @@ const edits = [
   {
     why: 'Progress column was wider than it needed to be',
     find: 'l.jsx("th",{style:{width:150},children:"Progress"})',
-    with: 'l.jsx("th",{style:{width:104},children:"Progress"})',
+    with: 'l.jsx("th",{style:{width:"14%"},children:"Progress"})',
   },
   {
     why: 'Actual column was wider than its figures',
     find: 'l.jsx("th",{style:{width:90,textAlign:"right"},children:"Actual"})',
-    with: 'l.jsx("th",{style:{width:80,textAlign:"right"},children:"Actual"})',
+    with: 'l.jsx("th",{style:{width:"10%",textAlign:"right"},children:"Actual"})',
   },
   {
     why: 'Remaining column was wider than its figures',
     find: 'l.jsx("th",{style:{width:130,textAlign:"right"},children:"Remaining"})',
-    with: 'l.jsx("th",{style:{width:104,textAlign:"right"},children:"Remaining"})',
+    with: 'l.jsx("th",{style:{width:"13%",textAlign:"right"},children:"Remaining"})',
   },
   {
     why: 'The plan table needs a name of its own to be treated differently',
@@ -650,6 +650,14 @@ const edits = [
     // one should drop any of them on a narrow screen.
     find: 'l.jsxs("table",{className:"tbl",children:[l.jsx("thead",{children:l.jsxs("tr",{children:[l.jsx("th",{children:"Category group"})',
     with: 'l.jsxs("table",{className:"tbl tbl-budget",children:[l.jsx("thead",{children:l.jsxs("tr",{children:[l.jsx("th",{children:"Category group"})',
+  },
+
+  {
+    why: 'The last fixed-width column in the plan',
+    // Every other column is now a share of the table, so this one has to be too
+    // or it keeps a constant 34px while the rest breathe.
+    find: 'l.jsx("th",{style:{width:34}})',
+    with: 'l.jsx("th",{style:{width:"4%"}})',
   },
 
   // --- the logo -----------------------------------------------------------
