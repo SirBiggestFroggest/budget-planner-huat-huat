@@ -266,43 +266,87 @@ async function searchWeb(query: string): Promise<{ text?: string; detail?: strin
   return { detail };
 }
 
-/** One quote from Finnhub. `c` is the current price, `pc` the previous close. */
+/** A price, from whichever source can answer.
+ *
+ *  Finnhub first, because that is the key you chose to set. Its free tier is
+ *  essentially US-listed, so "the OCBC share price" came back empty from it —
+ *  the bank is O39 on the SGX. Yahoo's chart endpoint needs no key and covers
+ *  those markets, so it catches what Finnhub cannot. Checked against each
+ *  other on AAPL: both returned 332.89.
+ *
+ *  Yahoo is unofficial and could change without notice, which is why it is the
+ *  fallback and not the first choice.
+ */
 async function getQuote(symbol: string): Promise<Record<string, unknown>> {
   const ticker = String(symbol ?? '').trim().toUpperCase();
-  if (!/^[A-Z0-9.\-:]{1,12}$/.test(ticker)) {
+  if (!/^[A-Z0-9.\-:^]{1,15}$/.test(ticker)) {
     return { error: 'That does not look like a ticker.' };
   }
-  if (!QUOTES_API_KEY) {
-    return { error: 'No quotes key is configured, so prices cannot be looked up. Say so plainly.' };
+
+  if (QUOTES_API_KEY) {
+    try {
+      const res = await fetch(
+        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${QUOTES_API_KEY}`,
+      );
+      if (res.ok) {
+        const q = await res.json();
+        // An unknown ticker answers with zeroes rather than an error here, which
+        // would otherwise be reported as a share worth nothing.
+        if (q && typeof q.c === 'number' && q.c !== 0) {
+          return {
+            source: 'finnhub',
+            symbol: ticker,
+            price: q.c,
+            change: q.d,
+            changePercent: q.dp,
+            previousClose: q.pc,
+            high: q.h,
+            low: q.l,
+            asOf: new Date().toISOString(),
+          };
+        }
+      } else {
+        console.error('[assistant] finnhub', res.status, 'for', ticker);
+      }
+    } catch (err) {
+      console.error('[assistant] finnhub failed', err instanceof Error ? err.message : err);
+    }
   }
 
   try {
     const res = await fetch(
-      `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${QUOTES_API_KEY}`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } },
     );
     if (!res.ok) {
-      console.error('[assistant] quote', res.status, 'for', ticker);
-      return { error: `The price service answered ${res.status}.` };
-    }
-    const q = await res.json();
-    // Finnhub answers an unknown ticker with zeroes rather than an error, which
-    // would otherwise be reported as a share worth nothing.
-    if (!q || typeof q.c !== 'number' || q.c === 0) {
       return { error: `No price found for ${ticker}. It may be unlisted or the wrong ticker.` };
     }
+    const d = await res.json();
+    const meta = d?.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice;
+    if (typeof price !== 'number') {
+      return { error: `No price found for ${ticker}. It may be unlisted or the wrong ticker.` };
+    }
+    const prev = meta?.previousClose ?? meta?.chartPreviousClose;
     return {
-      symbol: ticker,
-      price: q.c,
-      change: q.d,
-      changePercent: q.dp,
-      previousClose: q.pc,
-      high: q.h,
-      low: q.l,
+      source: 'yahoo',
+      symbol: meta?.symbol ?? ticker,
+      name: meta?.shortName,
+      // Currency is not decoration here: OCBC quotes in SGD and Apple in USD,
+      // and a bare number beside a ledger of one currency invites the wrong sum.
+      currency: meta?.currency,
+      price,
+      previousClose: prev,
+      change: typeof prev === 'number' ? Number((price - prev).toFixed(4)) : undefined,
+      changePercent:
+        typeof prev === 'number' && prev !== 0
+          ? Number((((price - prev) / prev) * 100).toFixed(4))
+          : undefined,
       asOf: new Date().toISOString(),
     };
   } catch (err) {
-    console.error('[assistant] quote failed', err instanceof Error ? err.message : err);
-    return { error: 'The price service could not be reached.' };
+    console.error('[assistant] yahoo failed', err instanceof Error ? err.message : err);
+    return { error: 'No price service could be reached.' };
   }
 }
 
@@ -312,7 +356,15 @@ async function runLookup(name: string, args: Record<string, unknown>): Promise<u
     // The model is told it failed, not why. The reason is for the logs and the
     // diagnose task; repeating an HTTP status back to someone asking about a
     // share price helps nobody.
-    return r.text ? { result: r.text } : { error: 'The search came back with nothing.' };
+    if (r.text) return { result: r.text };
+    // 429 is the grounded-search quota, which is far smaller than the ordinary
+    // one. Worth naming: it is a billing setting, not a broken feature.
+    const quota = (r.detail ?? '').includes('429');
+    return {
+      error: quota
+        ? 'Web search is out of quota on this key today, so nothing could be looked up.'
+        : 'The search came back with nothing.',
+    };
   }
   if (name === 'get_quote') return await getQuote(String(args?.symbol ?? ''));
   return { error: 'Unknown lookup.' };
