@@ -1282,6 +1282,21 @@
       accounts: (state.accounts || []).map(function (a) {
         return { id: a.id, label: a.label, balance: a.balance };
       }),
+      // Holdings carry their units and last marked worth so the assistant can
+      // work out a per-unit price and propose a new one. Without the units it
+      // could fetch a price and have nothing to multiply it by.
+      holdings: (state.holdings || []).map(function (h) {
+        var units = Number(h.units) || 0;
+        return {
+          id: h.id,
+          ticker: h.ticker,
+          label: h.label,
+          units: units,
+          value: h.value,
+          pricePerUnit: units > 0 ? Math.round((h.value / units) * 1e4) / 1e4 : null,
+          valuedAt: h.valuedAt,
+        };
+      }),
       months: byMonth,
       recent: recent,
     };
@@ -1362,6 +1377,31 @@
       };
     }
 
+    if (action.name === 'mark_value') {
+      var holding = (state.holdings || []).filter(function (h) {
+        return h.id === a.holdingId;
+      })[0];
+      var units = holding ? Number(holding.units) || 0 : 0;
+      var price = Number(a.price);
+      var worth = units > 0 && isFinite(price) ? Math.round(price * units * 100) / 100 : null;
+
+      var why = null;
+      if (!holding) why = 'That holding is not in your ledger.';
+      else if (!isFinite(price) || price <= 0) why = 'That price did not come through as a number.';
+      else if (units <= 0) why = 'That holding has no units, so a price cannot be turned into a value.';
+
+      return {
+        title: 'Mark a holding',
+        rows: [
+          ['Holding', holding ? holding.ticker + ' · ' + holding.label : a.holdingId],
+          ['Price a unit', isFinite(price) ? money(price) : String(a.price)],
+          ['Units', units ? String(units) : '—'],
+          ['New worth', worth === null ? '—' : money(worth)],
+        ].concat(a.source ? [['From', a.source]] : []),
+        problem: why,
+      };
+    }
+
     return { title: 'Unknown change', rows: [], problem: 'This is not something the app can apply.' };
   }
 
@@ -1405,6 +1445,17 @@
       if (!line) throw new Error('No budget line for that category this month.');
       dispatch({ t: 'setPlanned', month: thisMonth(), lineId: line.id, planned: a.planned });
       return 'Budget updated to ' + money(a.planned) + '.';
+    }
+
+    if (action.name === 'mark_value') {
+      var mvHolding = (state.holdings || []).filter(function (h) {
+        return h.id === a.holdingId;
+      })[0];
+      // describeAction has already refused anything missing or non-numeric, so
+      // by here the holding exists and the price is real.
+      var mvValue = Math.round(Number(a.price) * Number(mvHolding.units) * 100) / 100;
+      dispatch({ t: 'markValue', id: mvHolding.id, value: mvValue });
+      return mvHolding.ticker + ' marked at ' + money(mvValue);
     }
 
     if (action.name === 'set_goal_contribution') {
@@ -2060,6 +2111,91 @@
   }
 
   // -------------------------------------------------------------------------
+  // Pulling a price
+  // -------------------------------------------------------------------------
+
+  /** SGX codes are three characters and need a .SI suffix to be found, and the
+   *  letter O in O39 is routinely typed as a zero — this ledger has the OCBC
+   *  holding stored as "039". Rather than correct someone's data behind their
+   *  back, the lookup simply tries the sensible variants and reports which one
+   *  answered. */
+  function tickerVariants(raw) {
+    var t = String(raw || '').trim().toUpperCase();
+    if (!t) return [];
+    var out = [t];
+    if (!/\./.test(t)) out.push(t + '.SI');
+    if (/^0[A-Z0-9]{2}$/.test(t)) out.push('O' + t.slice(1) + '.SI');
+    if (/^O[A-Z0-9]{2}$/.test(t)) out.push('0' + t.slice(1) + '.SI');
+    return out.filter(function (x, i, a) { return a.indexOf(x) === i; });
+  }
+
+  /** Fetch today's price and write it as the holding's value.
+   *
+   *  The price comes from the Edge Function, never the page: the quote keys
+   *  live there, and a browser calling a price API directly would put them in
+   *  front of anyone who opened the console.
+   */
+  async function pullPrice(appDispatch, holding) {
+    if (appDispatch) dispatch = appDispatch;
+    if (!holding || !dispatch) return;
+
+    var units = Number(holding.units) || 0;
+    if (units <= 0) {
+      UI.status('That holding has no units, so a price cannot be turned into a value');
+      return;
+    }
+    if (!sb) {
+      UI.status('Sign in to look up a price');
+      return;
+    }
+
+    var tried = tickerVariants(holding.ticker);
+    if (!tried.length) {
+      UI.status('That holding has no ticker to look up');
+      return;
+    }
+
+    UI.status('Looking up ' + tried[0] + '…');
+
+    for (var i = 0; i < tried.length; i += 1) {
+      var quote = null;
+      try {
+        var res = await sb.functions.invoke('assistant', {
+          body: { task: 'quote', symbol: tried[i] },
+        });
+        // A rejected call is not a missing price. Saying "check the ticker"
+        // when the function has simply not been redeployed blames your data for
+        // something it did not do.
+        if (res && res.error) {
+          console.error('[huat] quote call rejected', res.error);
+          UI.status('The price service rejected the request — the assistant function may need redeploying');
+          return;
+        }
+        quote = res && res.data && res.data.quote;
+      } catch (err) {
+        console.error('[huat] price lookup failed', err);
+        UI.status('The price lookup could not be reached');
+        return;
+      }
+
+      if (quote && typeof quote.price === 'number') {
+        var value = Math.round(quote.price * units * 100) / 100;
+        dispatch({ t: 'markValue', id: holding.id, value: value });
+        UI.status(
+          (quote.name || tried[i]) + ' at ' +
+            (quote.currency ? quote.currency + ' ' : '') + quote.price +
+            ' a unit — ' + units + ' units marked at ' + money(value).replace('+', ''),
+        );
+        return;
+      }
+    }
+
+    // Say what was tried. "No price found" on its own invites the question this
+    // answers: did it even look for the right thing?
+    UI.status('No price found for ' + tried.join(' or ') + '. Check the ticker.');
+  }
+
+  // -------------------------------------------------------------------------
   // Salary
   // -------------------------------------------------------------------------
 
@@ -2472,6 +2608,7 @@
     editTransaction: openTransaction,
     removeAccount: removeAccount,
     setupSalary: setupSalary,
+    pullPrice: pullPrice,
     autoLogDue: autoLogDue,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,

@@ -92,7 +92,7 @@ function json(body: unknown, status = 200) {
 const MAX_INPUT_CHARS = 60_000;
 const MAX_TURNS = 24;
 
-type Task = 'chat' | 'categorise' | 'summarise' | 'insights' | 'diagnose';
+type Task = 'chat' | 'categorise' | 'summarise' | 'insights' | 'diagnose' | 'quote';
 
 interface Turn {
   role: 'user' | 'model';
@@ -157,6 +157,22 @@ const TOOLS = [
             reason: { type: 'STRING', description: 'One short sentence on why this figure.' },
           },
           required: ['groupId', 'planned'],
+        },
+      },
+      {
+        name: 'mark_value',
+        description:
+          'Propose writing down what a holding is worth now, given a price for one unit. ' +
+          'Look the price up with get_quote first rather than recalling one; the units come ' +
+          'from the holdings in the context and the total is worked out from them.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            holdingId: { type: 'STRING', description: 'The holding id from the context.' },
+            price: { type: 'NUMBER', description: 'Price for a single unit, positive.' },
+            source: { type: 'STRING', description: 'Where the price came from, e.g. "yahoo, just now".' },
+          },
+          required: ['holdingId', 'price'],
         },
       },
       {
@@ -395,6 +411,11 @@ const SYSTEM = [
   'nothing, say so plainly — never fill the gap with a number you remember,',
   'because a remembered price is always stale and reads exactly like a real one.',
   'Looking something up never changes the ledger; only the proposals do.',
+  '',
+  'To update what a holding is worth, call get_quote for its ticker and then',
+  'mark_value with the price per unit. Never carry a price over from memory, and',
+  'never do the multiplication into a value yourself — give the unit price and',
+  'let the app apply it to the units it holds.',
   'Keep replies under 120 words unless asked for more.',
 ].join('\n');
 
@@ -516,9 +537,18 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Body must be JSON.' }, 400);
   }
 
-  const tasks: Task[] = ['chat', 'categorise', 'summarise', 'insights', 'diagnose'];
+  const tasks: Task[] = ['chat', 'categorise', 'summarise', 'insights', 'diagnose', 'quote'];
   if (!payload || !tasks.includes(payload.task)) {
     return json({ error: `task must be one of: ${tasks.join(', ')}` }, 400);
+  }
+
+  // One price, for the Pull button beside a holding. It reaches no model at all
+  // — there is nothing to reason about in a number — so it is quick and costs
+  // no Gemini quota.
+  if (payload.task === 'quote') {
+    const symbol = String((payload as { symbol?: string }).symbol ?? '');
+    if (!symbol) return json({ error: 'Give a symbol.' }, 400);
+    return json({ ok: true, quote: await getQuote(symbol) });
   }
 
   // A task that exercises the two lookups and says exactly what came back.

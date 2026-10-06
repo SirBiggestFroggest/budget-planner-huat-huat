@@ -697,6 +697,41 @@ const edits = [
     with: 'l.jsxs("select",{className:"input",style:{padding:"5px 8px",fontSize:12},value:hhSort,onChange:T=>hhSetSort(T.target.value),title:"Order the plan",children:[l.jsx("option",{value:"plan",children:"My order"}),l.jsx("option",{value:"planned-desc",children:"Biggest budget"}),l.jsx("option",{value:"planned-asc",children:"Smallest budget"}),l.jsx("option",{value:"actual-desc",children:"Most spent"}),l.jsx("option",{value:"actual-asc",children:"Least spent"})]}),l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
   },
 
+  {
+    why: 'Holdings had no per-unit price',
+    // The ledger stores a holding's total worth, so the price of one unit was only
+    // ever implied. A price is the number actually read off a screen; the total is
+    // arithmetic, and the app should be the one doing it. The box is keyed on the
+    // stored value so a pull, or the chat, redraws it — an uncontrolled input
+    // would otherwise sit there showing the figure it had when it mounted.
+    find: 'l.jsx("th",{style:{width:110,textAlign:"right"},children:"Put in"}),',
+    with: 'l.jsx("th",{style:{width:110,textAlign:"right"},children:"Put in"}),l.jsx("th",{style:{width:122,textAlign:"right"},children:"Price"}),',
+  },
+  {
+    why: 'The price cell itself',
+    find: 'l.jsx("td",{className:"num",style:{textAlign:"right"},children:w(g.cost)}),',
+    with: 'l.jsx("td",{className:"num",style:{textAlign:"right"},children:w(g.cost)}),l.jsxs("td",{style:{textAlign:"right"},children:[l.jsx("input",{className:"input num",style:{width:"5.6em",textAlign:"right",padding:"4px 6px",fontSize:12},key:"px"+g.id+"_"+g.value,defaultValue:g.units>0?String(Math.round(g.value/g.units*1e4)/1e4):"",inputMode:"decimal",title:"Price for one unit",onBlur:T=>{const P=Number(String(T.target.value).replace(/[^0-9.]/g,""));if(!isFinite(P)||P<=0||!(g.units>0))return;const V=Math.round(P*g.units*100)/100;if(V===g.value)return;t({t:"markValue",id:g.id,value:V}),n(`${g.ticker} at ${w(P)} a unit — ${w(V)}`)}}),l.jsx("div",{className:"hint",children:"a unit"})]}),',
+  },
+  {
+    why: 'Nothing could fetch a price',
+    // `t` is this page's dispatch and `g` the holding. The work lives in bridge.js
+    // because it needs the Edge Function, which is where the keys are.
+    find: '!$&&l.jsx("button",{className:"btn sm",onClick:()=>{o(g.id),u(String(Math.round(g.value)))},children:"Mark value"}),',
+    with: '!$&&l.jsx("button",{className:"btn sm",title:"Fetch today’s price for "+g.ticker,onClick:()=>window.__hh.pullPrice(t,g),children:"Pull"}),!$&&l.jsx("button",{className:"btn sm",onClick:()=>{o(g.id),u(String(Math.round(g.value)))},children:"Mark value"}),',
+  },
+  {
+    why: 'The holdings total row was a cell short of the new column',
+    // The same fault the budget table had: a column added above a tfoot that was
+    // never widened, so every total shifts one place to the left.
+    find: 'l.jsx("td",{className:"num",style:{textAlign:"right",fontWeight:700},children:w(y.cost)}),',
+    with: 'l.jsx("td",{className:"num",style:{textAlign:"right",fontWeight:700},children:w(y.cost)}),l.jsx("td",{}),',
+  },
+  {
+    why: 'The empty-holdings row spanned the old column count',
+    find: 'colSpan:7',
+    with: 'colSpan:8',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
