@@ -92,7 +92,7 @@ function json(body: unknown, status = 200) {
 const MAX_INPUT_CHARS = 60_000;
 const MAX_TURNS = 24;
 
-type Task = 'chat' | 'categorise' | 'summarise' | 'insights' | 'diagnose' | 'quote';
+type Task = 'chat' | 'categorise' | 'summarise' | 'insights' | 'diagnose' | 'quote' | 'dividends';
 
 interface Turn {
   role: 'user' | 'model';
@@ -366,6 +366,53 @@ async function getQuote(symbol: string): Promise<Record<string, unknown>> {
   }
 }
 
+/** Dividend history for one ticker, newest last.
+ *
+ *  Yahoo returns these as an events map keyed by timestamp, with the amount
+ *  being per share — the multiplication by units is deliberately left to the
+ *  caller, which is the only place that knows how many units are held.
+ */
+async function getDividends(symbol: string, range = '2y'): Promise<Record<string, unknown>> {
+  const ticker = String(symbol ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9.\-:^]{1,15}$/.test(ticker)) {
+    return { error: 'That does not look like a ticker.' };
+  }
+
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}` +
+        `?interval=1d&range=${encodeURIComponent(range)}&events=div`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } },
+    );
+    if (!res.ok) return { error: `The dividend service answered ${res.status}.` };
+
+    const d = await res.json();
+    const result = d?.chart?.result?.[0];
+    if (!result) return { error: `No data found for ${ticker}.` };
+
+    const events = (result.events?.dividends ?? {}) as Record<string, { date?: number; amount?: number }>;
+    const list = Object.values(events)
+      .filter((e) => typeof e?.date === 'number' && typeof e?.amount === 'number')
+      .map((e) => ({
+        // The timestamp is seconds, and the date is the only part that matters:
+        // a payment belongs to a day, not a moment.
+        date: new Date((e.date as number) * 1000).toISOString().slice(0, 10),
+        amountPerUnit: e.amount as number,
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    return {
+      symbol: result.meta?.symbol ?? ticker,
+      name: result.meta?.shortName,
+      currency: result.meta?.currency,
+      dividends: list,
+    };
+  } catch (err) {
+    console.error('[assistant] dividends failed', err instanceof Error ? err.message : err);
+    return { error: 'The dividend service could not be reached.' };
+  }
+}
+
 async function runLookup(name: string, args: Record<string, unknown>): Promise<unknown> {
   if (name === 'search_web') {
     const r = await searchWeb(String(args?.query ?? ''));
@@ -537,7 +584,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Body must be JSON.' }, 400);
   }
 
-  const tasks: Task[] = ['chat', 'categorise', 'summarise', 'insights', 'diagnose', 'quote'];
+  const tasks: Task[] = ['chat', 'categorise', 'summarise', 'insights', 'diagnose', 'quote', 'dividends'];
   if (!payload || !tasks.includes(payload.task)) {
     return json({ error: `task must be one of: ${tasks.join(', ')}` }, 400);
   }
@@ -545,6 +592,13 @@ Deno.serve(async (req: Request) => {
   // One price, for the Pull button beside a holding. It reaches no model at all
   // — there is nothing to reason about in a number — so it is quick and costs
   // no Gemini quota.
+  if (payload.task === 'dividends') {
+    const symbol = String((payload as { symbol?: string }).symbol ?? '');
+    if (!symbol) return json({ error: 'Give a symbol.' }, 400);
+    const range = String((payload as { range?: string }).range ?? '2y');
+    return json({ ok: true, ...(await getDividends(symbol, range)) });
+  }
+
   if (payload.task === 'quote') {
     const symbol = String((payload as { symbol?: string }).symbol ?? '');
     if (!symbol) return json({ error: 'Give a symbol.' }, 400);

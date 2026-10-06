@@ -1746,6 +1746,185 @@
     name.input.focus();
   }
 
+  // -------------------------------------------------------------------------
+  // Editing a holding
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {object} opts
+   *   holding    {label, ticker, kind, units, cost, value, accountId, memberId}
+   *   accounts   [{id,label}]
+   *   members    [{id,name}]
+   *   onSave(patch)
+   *   onDelete()
+   */
+  function holding(opts) {
+    var h = opts.holding || {};
+
+    var box = card(470);
+    box.style.maxHeight = 'min(86vh, 820px)';
+    box.style.display = 'grid';
+    box.style.gridTemplateRows = 'auto 1fr auto auto';
+    box.appendChild(heading('Edit holding', 24));
+
+    var body = el('div', 'display:grid;gap:13px;overflow-y:auto;padding-right:4px;align-content:start');
+
+    var name = field('What it is');
+    name.input.value = String(h.label || '');
+    name.input.maxLength = 60;
+    body.appendChild(name.wrap);
+
+    var ticker = field('Ticker', 'Used to look up the price and any dividends.');
+    ticker.input.value = String(h.ticker || '');
+    ticker.input.maxLength = 15;
+    body.appendChild(ticker.wrap);
+
+    var kind = field('Kind', 'Stock, ETF, bond — whatever you call it.');
+    kind.input.value = String(h.kind || 'Stock');
+    body.appendChild(kind.wrap);
+
+    var units = field('Units held');
+    units.input.value = String(Number(h.units) || 0);
+    units.input.inputMode = 'decimal';
+    body.appendChild(units.wrap);
+
+    var cost = field('Put in', 'Everything you paid for it, in total.');
+    cost.input.value = String(Number(h.cost) || 0);
+    cost.input.inputMode = 'decimal';
+    body.appendChild(cost.wrap);
+
+    // Worth today used to be an inline box on the row. It lives here now that
+    // the row carries a unit price, which is the figure people actually read.
+    var worth = field('Worth today', 'Leave it alone and the unit price on the row keeps setting it.');
+    worth.input.value = String(Number(h.value) || 0);
+    worth.input.inputMode = 'decimal';
+    body.appendChild(worth.wrap);
+
+    var perUnit = el('div', 'font:400 12px ' + SANS + ';color:#7A7468;margin-top:-6px');
+    function paintPerUnit() {
+      var un = Number(String(units.input.value).replace(/[^0-9.]/g, ''));
+      var wv = Number(String(worth.input.value).replace(/[^0-9.]/g, ''));
+      perUnit.textContent =
+        un > 0 && isFinite(wv) && wv > 0
+          ? 'That is ' + Math.round((wv / un) * 1e4) / 1e4 + ' a unit.'
+          : '';
+    }
+    units.input.oninput = paintPerUnit;
+    worth.input.oninput = paintPerUnit;
+    paintPerUnit();
+    body.appendChild(perUnit);
+
+    function picker(labelText, options, current, onPick) {
+      var wrap = el('div', 'display:grid;gap:6px');
+      wrap.appendChild(label(labelText));
+      var sel = el(
+        'select',
+        'border:1px solid #DDD4C2;background:#FDFBF7;border-radius:8px;padding:8px 10px;' +
+          'font:400 13px ' + SANS + ';width:100%;color:#1B1915',
+      );
+      options.forEach(function (o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (String(o.value) === String(current)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.onchange = function () {
+        onPick(sel.value);
+      };
+      wrap.appendChild(sel);
+      return wrap;
+    }
+
+    var accountId = h.accountId || '';
+    body.appendChild(
+      picker(
+        'Account',
+        [{ value: '', label: 'No account' }].concat(
+          (opts.accounts || []).map(function (a) {
+            return { value: a.id, label: a.label };
+          }),
+        ),
+        accountId,
+        function (v) {
+          accountId = v;
+        },
+      ),
+    );
+
+    var memberId = h.memberId || '';
+    body.appendChild(
+      picker(
+        'Whose',
+        (opts.members || []).map(function (m) {
+          return { value: m.id, name: m.name, label: m.name };
+        }),
+        memberId,
+        function (v) {
+          memberId = v;
+        },
+      ),
+    );
+
+    box.appendChild(body);
+
+    var error = el('div', 'font:400 12px ' + SANS + ';color:#A6412B;margin-top:10px');
+    error.style.display = 'none';
+    box.appendChild(error);
+
+    function fail(text, input) {
+      error.textContent = text;
+      error.style.display = 'block';
+      if (input) input.focus();
+    }
+
+    var foot = el('div', 'display:flex;gap:8px;align-items:center;margin-top:16px');
+
+    var del = button('Delete', 'danger');
+    del.onclick = function () {
+      hide();
+      opts.onDelete();
+    };
+    foot.appendChild(del);
+    foot.appendChild(el('div', 'flex:1'));
+
+    var cancel = button('Cancel');
+    cancel.onclick = hide;
+
+    var save = button('Save', 'primary');
+    save.onclick = function () {
+      var text = name.input.value.trim();
+      var tick = ticker.input.value.trim().toUpperCase();
+      var un = Number(String(units.input.value).replace(/[^0-9.]/g, ''));
+      var cv = Number(String(cost.input.value).replace(/[^0-9.]/g, ''));
+      var wv = Number(String(worth.input.value).replace(/[^0-9.]/g, ''));
+
+      if (!text) return fail('Give it a name.', name.input);
+      if (!isFinite(un) || un <= 0) return fail('Units need to be a number above zero.', units.input);
+      if (!isFinite(cv) || cv < 0) return fail('What you put in needs to be a number.', cost.input);
+      if (!isFinite(wv) || wv < 0) return fail('What it is worth needs to be a number.', worth.input);
+
+      hide();
+      opts.onSave({
+        label: text,
+        ticker: tick || '—',
+        kind: kind.input.value.trim() || 'Stock',
+        units: un,
+        cost: Math.round(cv * 100) / 100,
+        value: Math.round(wv * 100) / 100,
+        accountId: accountId || null,
+        memberId: memberId || null,
+      });
+    };
+
+    foot.appendChild(cancel);
+    foot.appendChild(save);
+    box.appendChild(foot);
+
+    scrim().appendChild(box);
+    name.input.focus();
+  }
+
   window.__hhUI = {
     status: status,
     message: message,
@@ -1756,6 +1935,7 @@
     settings: settings,
     recurring: recurring,
     transaction: transaction,
+    holding: holding,
     hide: hide,
   };
 })();

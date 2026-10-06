@@ -2196,6 +2196,154 @@
   }
 
   // -------------------------------------------------------------------------
+  // Editing a holding
+  // -------------------------------------------------------------------------
+
+  function openHolding(appDispatch, h) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState || freshState();
+    if (!h || !dispatch) return;
+
+    UI.holding({
+      holding: h,
+      accounts: (state.accounts || []).map(function (a) {
+        return { id: a.id, label: a.label };
+      }),
+      members: (state.members || []).map(function (m) {
+        return { id: m.id, name: m.name };
+      }),
+      onSave: function (patch) {
+        dispatch({ t: 'updateHolding', id: h.id, patch: patch });
+        UI.status(patch.ticker + ' updated');
+      },
+      onDelete: function () {
+        UI.message('Remove this holding?', 'Its dividends stay in the ledger.', true, {
+          label: 'Remove',
+          onClick: function () {
+            dispatch({ t: 'deleteHolding', id: h.id });
+            UI.status((h.ticker || 'Holding') + ' removed');
+          },
+        });
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Pulling dividends
+  // -------------------------------------------------------------------------
+
+  /** Fetch what a share paid, work out what that came to on the units held, and
+   *  offer to log it.
+   *
+   *  It asks first and logs nothing on its own. A price is one number you can
+   *  see and correct on the row; this writes several dated entries into the
+   *  ledger at once, and a wrong one is tedious to find later.
+   */
+  async function pullDividends(appDispatch, h) {
+    if (appDispatch) dispatch = appDispatch;
+    var state = latestState || freshState();
+    if (!h || !dispatch) return;
+
+    var units = Number(h.units) || 0;
+    if (units <= 0) {
+      UI.status('That holding has no units, so a payout cannot be worked out');
+      return;
+    }
+    if (!sb) {
+      UI.status('Sign in to look up dividends');
+      return;
+    }
+
+    var tried = tickerVariants(h.ticker);
+    if (!tried.length) {
+      UI.status('That holding has no ticker to look up');
+      return;
+    }
+
+    UI.status('Looking up dividends for ' + tried[0] + '…');
+
+    var found = null;
+    for (var i = 0; i < tried.length && !found; i += 1) {
+      try {
+        var res = await sb.functions.invoke('assistant', {
+          body: { task: 'dividends', symbol: tried[i], range: '5y' },
+        });
+        if (res && res.error) {
+          console.error('[huat] dividend call rejected', res.error);
+          UI.status('The dividend service rejected the request — the assistant function may need redeploying');
+          return;
+        }
+        var d = res && res.data;
+        if (d && Array.isArray(d.dividends) && d.dividends.length) found = d;
+      } catch (err) {
+        console.error('[huat] dividend lookup failed', err);
+        UI.status('The dividend lookup could not be reached');
+        return;
+      }
+    }
+
+    if (!found) {
+      UI.status('No dividends found for ' + tried.join(' or '));
+      return;
+    }
+
+    // Anything already recorded for this holding on that date is left alone.
+    // Pressing the button twice should not pay you twice.
+    var already = {};
+    (state.dividends || []).forEach(function (x) {
+      if (x.holdingId === h.id) already[String(x.date)] = true;
+    });
+
+    var fresh = found.dividends.filter(function (x) {
+      return !already[x.date];
+    });
+
+    if (!fresh.length) {
+      UI.status('Every dividend ' + found.symbol + ' has paid is already logged');
+      return;
+    }
+
+    var total = 0;
+    var lines = fresh.map(function (x) {
+      var paid = Math.round(x.amountPerUnit * units * 100) / 100;
+      total += paid;
+      return x.date + ' · ' + x.amountPerUnit + ' a unit × ' + units + ' = ' + money(paid).replace('+', '');
+    });
+    total = Math.round(total * 100) / 100;
+
+    UI.message(
+      'Log ' + fresh.length + (fresh.length === 1 ? ' dividend' : ' dividends') + ' for ' + (found.name || found.symbol) + '?',
+      lines.join('\n') +
+        '\n\nTotal ' + money(total).replace('+', '') +
+        (found.currency ? ' in ' + found.currency : '') +
+        '. They are logged as cash, which does not change what the holding is ' +
+        'worth — open one and tick reinvested if it was.',
+      true,
+      {
+        label: 'Log them',
+        onClick: function () {
+          fresh.forEach(function (x) {
+            dispatch({
+              t: 'addDividend',
+              dividend: {
+                holdingId: h.id,
+                date: x.date,
+                amount: Math.round(x.amountPerUnit * units * 100) / 100,
+                reinvest: false,
+                memberId: h.memberId || null,
+              },
+            });
+          });
+          UI.status(
+            fresh.length + (fresh.length === 1 ? ' dividend' : ' dividends') +
+              ' logged · ' + money(total).replace('+', ''),
+          );
+        },
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Salary
   // -------------------------------------------------------------------------
 
@@ -2609,6 +2757,8 @@
     removeAccount: removeAccount,
     setupSalary: setupSalary,
     pullPrice: pullPrice,
+    pullDividends: pullDividends,
+    editHolding: openHolding,
     autoLogDue: autoLogDue,
     deleteSelected: deleteSelected,
     openAssistant: openAssistant,

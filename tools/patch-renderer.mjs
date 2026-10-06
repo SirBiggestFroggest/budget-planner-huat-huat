@@ -717,7 +717,7 @@ const edits = [
     // `t` is this page's dispatch and `g` the holding. The work lives in bridge.js
     // because it needs the Edge Function, which is where the keys are.
     find: '!$&&l.jsx("button",{className:"btn sm",onClick:()=>{o(g.id),u(String(Math.round(g.value)))},children:"Mark value"}),',
-    with: '!$&&l.jsx("button",{className:"btn sm",title:"Fetch today’s price for "+g.ticker,onClick:()=>window.__hh.pullPrice(t,g),children:"Pull"}),!$&&l.jsx("button",{className:"btn sm",onClick:()=>{o(g.id),u(String(Math.round(g.value)))},children:"Mark value"}),',
+    with: '!$&&l.jsx("button",{className:"btn sm",title:"Fetch today’s price for "+g.ticker,onClick:()=>window.__hh.pullPrice(t,g),children:"Price"}),!$&&l.jsx("button",{className:"btn sm",title:"Look up what "+g.ticker+" has paid out",onClick:()=>window.__hh.pullDividends(t,g),children:"Dividends"}),!$&&l.jsx("button",{className:"btn sm",title:"Edit this holding",onClick:()=>window.__hh.editHolding(t,g),children:"Edit"}),',
   },
   {
     why: 'The holdings total row was a cell short of the new column',
@@ -846,6 +846,46 @@ const edits = [
     why: 'Recurring column as a share of the table',
     find: 'l.jsx("th",{style:{width:150}})',
     with: 'l.jsx("th",{style:{width:"14%"}})',
+  },
+
+  {
+    why: 'A holding could be valued and deleted but never corrected',
+    // Units, cost, ticker and whose it is were fixed at the moment it was added.
+    // A mistyped ticker meant the price and dividend lookups could never find
+    // it, with no way to put it right short of deleting the holding.
+    find: 'case"markValue":',
+    with: 'case"updateHolding":return{...e,holdings:e.holdings.map(i=>i.id===t.id?{...i,...t.patch}:i)};case"markValue":',
+  },
+  {
+    why: 'Four controls need more of the row than three did',
+    // 20 + 8 + 12 + 9 + 11 + 12 + 10 + 18 = 100.
+    find: 'l.jsx("th",{style:{width:"13%"}})',
+    with: 'l.jsx("th",{style:{width:"18%"}})',
+  },
+  {
+    why: 'Trimmed to pay for it',
+    find: 'l.jsx("th",{style:{width:"21%"},children:"Holding"}),',
+    with: 'l.jsx("th",{style:{width:"20%"},children:"Holding"}),',
+  },
+  {
+    why: 'Trimmed to pay for it',
+    find: 'l.jsx("th",{style:{width:"9%"},children:"Whose"})',
+    with: 'l.jsx("th",{style:{width:"8%"},children:"Whose"})',
+  },
+  {
+    why: 'Trimmed to pay for it',
+    find: 'l.jsx("th",{style:{width:"13%"},children:"Account"})',
+    with: 'l.jsx("th",{style:{width:"12%"},children:"Account"})',
+  },
+  {
+    why: 'Trimmed to pay for it',
+    find: 'l.jsx("th",{style:{width:"13%",textAlign:"right"},children:"Worth today"})',
+    with: 'l.jsx("th",{style:{width:"12%",textAlign:"right"},children:"Worth today"})',
+  },
+  {
+    why: 'Trimmed to pay for it',
+    find: 'l.jsx("th",{style:{width:"11%",textAlign:"right"},children:"Growth"})',
+    with: 'l.jsx("th",{style:{width:"10%",textAlign:"right"},children:"Growth"})',
   },
 
   // --- the logo -----------------------------------------------------------
