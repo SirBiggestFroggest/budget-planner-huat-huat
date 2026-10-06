@@ -460,3 +460,58 @@
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Palette
+ * --------------------------------------------------------------------------
+ *
+ * Built from #ff7043, #ffab40, #ffd54f, #cddc39 and #ffffff.
+ *
+ * None of the four colours can carry text. Measured against white they come out
+ * at 2.74, 1.88, 1.41 and 1.51 to one, where small text needs 4.5. So they are
+ * used where they belong — fills, dots, surfaces — and every colour that has to
+ * be read is the same hue taken down in lightness until it passes, against both
+ * the white card and the warm page behind it.
+ *
+ * The two that carry meaning keep it. Lime stays money kept and coral stays
+ * money out, because they are the warm palette's nearest green and red; swapping
+ * them for two neighbouring oranges would have made a number's sign something
+ * you had to read rather than see.
+ */
+
+:root {
+  /* Surfaces: white is straight from the palette, the page a warm tint of it. */
+  --card: #ffffff;
+  --card-2: #fffaf0;
+  --paper: #fff4e2;
+  --paper-dot: #ffe3b8;
+  --line: #f0d9b4;
+  --line-2: #faeada;
+
+  /* Text, warmed to sit with the palette rather than grey against it. */
+  --ink: #2a1c0e;
+  --ink-2: #5a4227;
+  --ink-3: #776046;
+  --ink-4: #8d7a60;
+
+  /* The sidebar, a dark of the same family instead of neutral charcoal. */
+  --dark: #2a1a0c;
+  --dark-2: #35230f;
+  --dark-line: #4b3317;
+  --dark-ink: #fff4e2;
+  --dark-ink-2: #d9bb8e;
+
+  /* #ffd54f as a fill; its readable form for anything set in it. */
+  --gold: #ffd54f;
+  --gold-2: #8d6c00;
+
+  /* Money kept, from #cddc39. Money out and over budget, from #ff7043. */
+  --teal: #6d7615;
+  --teal-2: #515806;
+  --red: #d43300;
+
+  /* Whose-is-it dots: the palette at full strength, since these are fills. */
+  --nia: #ff7043;
+  --theo: #cddc39;
+  --joint: #ffab40;
+}
