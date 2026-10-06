@@ -25,12 +25,32 @@
  *  the person presses Save. That boundary is deliberate: a mis-heard "spent
  *  forty" should cost a glance, not a wrong number in a shared book.
  *
+ *  LOOKING THINGS UP
+ *
+ *  Two of the tools are read-only, so this function runs them itself and hands
+ *  the answer back to the model, which then writes the reply. The other three
+ *  change the ledger and are never run here — they come back as proposals.
+ *  Read is safe to do on your behalf; write is not.
+ *
+ *  `search_web` is a function declaration rather than Gemini's own grounding
+ *  because the API refuses a request that carries a search tool alongside
+ *  ordinary function declarations: "multiple tools are supported only when they
+ *  are all search tools". Grounding is therefore done in a second, separate
+ *  call that carries nothing else, and its text is returned as this tool's
+ *  result. That keeps the ledger tools working, which switching the whole
+ *  request to grounding would not.
+ *
  *  SET UP
  *      supabase secrets set GEMINI_API_KEY=...        (never commit it)
+ *      supabase secrets set QUOTES_API_KEY=...        (optional, finnhub.io)
  *      supabase functions deploy assistant
  */
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
+
+/** Finnhub, free tier. Optional: without it the assistant simply says it cannot
+ *  look up a price, rather than guessing one. */
+const QUOTES_API_KEY = Deno.env.get('QUOTES_API_KEY') ?? '';
 
 /** Models to try, in order, until one answers.
  *
@@ -140,6 +160,33 @@ const TOOLS = [
         },
       },
       {
+        name: 'search_web',
+        description:
+          'Look something up on the web when the answer depends on the world rather than the ledger: ' +
+          'rates, prices, what something typically costs, whether a company has had news. ' +
+          'Do not use it for anything the ledger already knows.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            query: { type: 'STRING', description: 'What to search for, as you would type it.' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'get_quote',
+        description:
+          'The current price of one listed share or ETF by ticker. Use this rather than search_web ' +
+          'when an exact figure is wanted, such as valuing a holding.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            symbol: { type: 'STRING', description: 'Ticker, e.g. AAPL. Uppercase.' },
+          },
+          required: ['symbol'],
+        },
+      },
+      {
         name: 'set_goal_contribution',
         description: 'Propose how much to put towards a savings goal each month.',
         parameters: {
@@ -157,6 +204,97 @@ const TOOLS = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// The tools this function runs itself
+// ---------------------------------------------------------------------------
+//
+// Strictly read-only. Nothing here can change the ledger; the tools that can
+// are returned to the page as proposals and confirmed by a person.
+
+const LOOKUPS = new Set(['search_web', 'get_quote']);
+
+/** How many times the model may look something up before answering. Two is
+ *  enough for "price of X, and is that high?" and bounds a model that would
+ *  otherwise search in circles on a question the web cannot settle. */
+const MAX_LOOKUPS = 2;
+
+/** A search-grounded call carrying no other tools, because the API will not
+ *  accept grounding beside function declarations. */
+async function searchWeb(query: string): Promise<string> {
+  for (const model of MODELS) {
+    try {
+      const res = await fetch(endpointFor(model), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: query }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+        }),
+      });
+      if (!res.ok) {
+        console.error('[assistant] search', res.status, 'on', model);
+        continue;
+      }
+      const data = await res.json();
+      const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+        .map((x: { text?: string }) => x.text ?? '')
+        .join('')
+        .trim();
+      if (text) return text;
+    } catch (err) {
+      console.error('[assistant] search failed on', model, err instanceof Error ? err.message : err);
+    }
+  }
+  return 'The search did not come back with anything. Say so rather than guessing.';
+}
+
+/** One quote from Finnhub. `c` is the current price, `pc` the previous close. */
+async function getQuote(symbol: string): Promise<Record<string, unknown>> {
+  const ticker = String(symbol ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9.\-:]{1,12}$/.test(ticker)) {
+    return { error: 'That does not look like a ticker.' };
+  }
+  if (!QUOTES_API_KEY) {
+    return { error: 'No quotes key is configured, so prices cannot be looked up. Say so plainly.' };
+  }
+
+  try {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${QUOTES_API_KEY}`,
+    );
+    if (!res.ok) {
+      console.error('[assistant] quote', res.status, 'for', ticker);
+      return { error: `The price service answered ${res.status}.` };
+    }
+    const q = await res.json();
+    // Finnhub answers an unknown ticker with zeroes rather than an error, which
+    // would otherwise be reported as a share worth nothing.
+    if (!q || typeof q.c !== 'number' || q.c === 0) {
+      return { error: `No price found for ${ticker}. It may be unlisted or the wrong ticker.` };
+    }
+    return {
+      symbol: ticker,
+      price: q.c,
+      change: q.d,
+      changePercent: q.dp,
+      previousClose: q.pc,
+      high: q.h,
+      low: q.l,
+      asOf: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error('[assistant] quote failed', err instanceof Error ? err.message : err);
+    return { error: 'The price service could not be reached.' };
+  }
+}
+
+async function runLookup(name: string, args: Record<string, unknown>): Promise<unknown> {
+  if (name === 'search_web') return { result: await searchWeb(String(args?.query ?? '')) };
+  if (name === 'get_quote') return await getQuote(String(args?.symbol ?? ''));
+  return { error: 'Unknown lookup.' };
+}
+
 const SYSTEM = [
   'You are the assistant inside Huat Huat, a manual budget ledger a couple keeps by hand.',
   'You are concise, concrete and never preachy about money.',
@@ -173,6 +311,15 @@ const SYSTEM = [
   'before it is saved, so propose a concrete figure rather than asking them to pick.',
   '',
   'Do not call a tool merely to answer a question about past spending.',
+  '',
+  'You can look things up. Use get_quote for the price of a listed share or ETF,',
+  'and search_web for anything else that depends on the world rather than the',
+  'ledger. Prefer the ledger when it already holds the answer.',
+  'Say where a figure came from, and when it was as of, so a price is never',
+  'mistaken for something they recorded. If a lookup comes back with an error or',
+  'nothing, say so plainly — never fill the gap with a number you remember,',
+  'because a remembered price is always stale and reads exactly like a real one.',
+  'Looking something up never changes the ledger; only the proposals do.',
   'Keep replies under 120 words unless asked for more.',
 ].join('\n');
 
@@ -302,7 +449,9 @@ Deno.serve(async (req: Request) => {
   const { contents, jsonOnly, useTools } = buildRequest(payload);
   if (!contents.length) return json({ error: 'Nothing to say.' }, 400);
 
-  const body = JSON.stringify({
+  // Rebuilt after each lookup: the model's own call and the result are appended
+  // to contents so it can answer with what came back.
+  const makeBody = () => JSON.stringify({
     systemInstruction: { parts: [{ text: SYSTEM }] },
     contents,
     ...(useTools ? { tools: TOOLS } : {}),
@@ -320,13 +469,21 @@ Deno.serve(async (req: Request) => {
     },
   });
 
+  let body = makeBody();
+
   if (body.length > MAX_INPUT_CHARS) {
     return json({ error: 'TOO_LARGE', message: 'That is more ledger than the assistant can read at once.' }, 413);
   }
 
   let lastStatus = 0;
+  let lookups = 0;
 
-  for (const model of MODELS) {
+  // A lookup `continue`s to re-ask, so the same model is tried again with the
+  // result in hand; without repeating the list a lookup would push the answer
+  // onto the next model each time and fall off the end after three.
+  const chain = MODELS.flatMap((m) => [m, ...Array(MAX_LOOKUPS + 1).fill(m)]);
+
+  for (const model of chain) {
     let res: Response;
     try {
       res = await fetch(endpointFor(model), {
@@ -361,6 +518,44 @@ Deno.serve(async (req: Request) => {
     const call = parts.find((x: { functionCall?: unknown }) => x.functionCall)?.functionCall;
 
     if (call) {
+      // Read-only? Run it here and let the model carry on. Anything that would
+      // change the ledger is returned instead, for a person to confirm.
+      if (LOOKUPS.has(call.name)) {
+        if (lookups >= MAX_LOOKUPS) {
+          console.error('[assistant] lookup limit reached, answering without', call.name);
+          contents.push({
+            role: 'user',
+            parts: [{ text: 'You have looked things up enough. Answer with what you have.' }],
+          });
+          body = makeBody();
+          continue;
+        }
+
+        lookups += 1;
+        const result = await runLookup(call.name, (call.args ?? {}) as Record<string, unknown>);
+
+        // Both halves are required: the model's own call, then its result.
+        // Sending only the result leaves a reply that answers nothing.
+        // contents was inferred from text-only turns, so these two parts are
+        // widened rather than fought with; Deno typechecks on deploy and would
+        // otherwise refuse the function.
+        const turns = contents as Array<Record<string, unknown>>;
+        turns.push({ role: 'model', parts: [{ functionCall: call }] });
+        turns.push({
+          role: 'user',
+          parts: [{ functionResponse: { name: call.name, response: result } }],
+        });
+
+        body = makeBody();
+        if (body.length > MAX_INPUT_CHARS) {
+          return json(
+            { error: 'TOO_LARGE', message: 'That answer grew past what the assistant can hold.' },
+            413,
+          );
+        }
+        continue;
+      }
+
       // A proposal, not a change. The page confirms it with the person.
       return json({ ok: true, model, action: { name: call.name, args: call.args ?? {} }, text });
     }
