@@ -841,9 +841,37 @@
       swatch.type = 'button';
       swatch.title = 'Change colour';
       swatch.onclick = function () {
-        var i = opts.swatches.indexOf(g.color);
-        g.color = opts.swatches[(i + 1) % opts.swatches.length];
+        // Step to the next colour no other group is holding. Two groups the same
+        // shade is the thing this picker exists to avoid, so it skips rather
+        // than offers and lets you make the clash by hand.
+        var taken = {};
+        model.forEach(function (o) {
+          if (o !== g && !o.removed && o.color) taken[String(o.color).toUpperCase()] = true;
+        });
+
+        var from = opts.swatches.indexOf(g.color);
+        var found = null;
+        for (var step = 1; step <= opts.swatches.length; step++) {
+          var next = opts.swatches[(from + step + opts.swatches.length) % opts.swatches.length];
+          if (!taken[String(next).toUpperCase()]) {
+            found = next;
+            break;
+          }
+        }
+
+        if (!found) {
+          // More groups than colours. Saying so beats a dot that does nothing
+          // when clicked and leaves you wondering whether it is broken.
+          error.textContent =
+            'Every colour is already taken by another group. Remove or merge one to free a colour.';
+          error.style.color = '#A6412B';
+          error.style.display = 'block';
+          return;
+        }
+
+        g.color = found;
         swatch.style.background = g.color;
+        error.style.display = 'none';
       };
       top.appendChild(swatch);
 
@@ -954,10 +982,20 @@
 
     var addGroup = button('＋ New group');
     addGroup.onclick = function () {
+      // First colour nobody holds, rather than one picked by counting — which
+      // handed the ninth group the first group's colour.
+      var inUse = {};
+      model.forEach(function (o) {
+        if (!o.removed && o.color) inUse[String(o.color).toUpperCase()] = true;
+      });
+      var free = opts.swatches.find(function (c) {
+        return !inUse[String(c).toUpperCase()];
+      });
+
       model.push({
         id: null,
         label: '',
-        color: opts.swatches[model.length % opts.swatches.length],
+        color: free || opts.swatches[model.length % opts.swatches.length],
         inUse: 0,
         planned: 0,
         removed: false,

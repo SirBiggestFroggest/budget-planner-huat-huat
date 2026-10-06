@@ -2210,9 +2210,28 @@
     var have = {};
     (state.groups || []).forEach(function (g) { have[norm(g.label)] = g.id; });
 
+    // Never hand out a colour a group already holds. Counting through the list
+    // ignored what was already in the ledger, so a fresh group could arrive
+    // wearing the same shade as one that had been there for months.
+    var spoken = {};
+    (state.groups || []).forEach(function (g) {
+      if (g.color) spoken[String(g.color).toUpperCase()] = true;
+    });
+
+    var pool = PLAN_COLOURS.concat(GROUP_SWATCHES).filter(function (c, i, a) {
+      return a.indexOf(c) === i;
+    });
+
     var missing = RECOMMENDED.filter(function (r) { return !have[norm(r.label)]; });
-    missing.forEach(function (r, i) {
-      dispatch({ t: 'addGroup', label: r.label, color: PLAN_COLOURS[i % PLAN_COLOURS.length] });
+    missing.forEach(function (r) {
+      var free = pool.find(function (c) {
+        return !spoken[String(c).toUpperCase()];
+      });
+      // Past the end of the pool there is nothing unused left; reuse rather than
+      // refuse to create the group, and the editor can sort it out.
+      var colour = free || pool[Object.keys(spoken).length % pool.length];
+      spoken[String(colour).toUpperCase()] = true;
+      dispatch({ t: 'addGroup', label: r.label, color: colour });
     });
 
     var waited = 0;
