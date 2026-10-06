@@ -606,14 +606,6 @@ const edits = [
     with: 'colSpan:8',
   },
 
-  {
-    why: 'Nothing offered a starting set of categories to budget against',
-    // The button only asks for the plan; bridge.js owns the list and the work,
-    // because creating a group and then a line that points at it needs the id
-    // the reducer generates, which is not readable until the state comes back.
-    find: 'l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
-    with: 'l.jsx("button",{className:"btn sm",title:"Add the recommended categories, with a target share of income for each",onClick:()=>window.__hh.recommendedPlan(n,t),children:"Recommended split"}),l.jsx("button",{className:"btn primary sm",onClick:()=>o(!0),children:"＋ New budget line"})',
-  },
 
   {
     why: 'Nothing on Cash Flow offered to set up a salary',
