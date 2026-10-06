@@ -384,6 +384,25 @@
   }
 }
 
+/* The plan needs more room than the others, and needs it sooner.
+ *
+ * Measured: eight columns will not go below 648px, and beside its side panel
+ * the card only gets about (viewport - 303) x 0.62 — so the plan does not fit
+ * until the window is around 1341px wide. That is why it fit at 90% browser
+ * zoom and not at 100%: zooming out buys CSS pixels, and 100% on a common
+ * laptop lands just under the line.
+ *
+ * Scrolling it sideways was never the answer to that; it just hid the problem
+ * at the width most people actually use. Below 1450px the plan takes the whole
+ * row and the side panel sits underneath, which is far more room than it needs.
+ * The 1.7fr is the budget grid's own, so no other page is affected. */
+
+@media (max-width: 1450px) {
+  .page .grid[style*='1.7fr'] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
 /* --------------------------------------------------------------------------
  * The plan on a phone
  * --------------------------------------------------------------------------
