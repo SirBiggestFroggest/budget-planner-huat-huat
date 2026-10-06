@@ -1537,7 +1537,10 @@
   // money vanishing. Here those entries become uncategorised instead — still
   // in the ledger, still in the totals, just waiting to be filed again.
 
-  var GROUP_SWATCHES = ['#4F6E9A', '#B0542C', '#3F5A6E', '#6E8F5A', '#8A5A7A', '#A88A2E', '#7A7468', '#C9A24A'];
+  var GROUP_SWATCHES = [
+    '#4F6E9A', '#BD7342', '#359735', '#883053', '#32328F', '#888830', '#359097', '#613F2E',
+    '#955CA3', '#335B41', '#B8474F', '#376A25', '#4E335B', '#359769', '#BD428C', '#BD42BD',
+  ];
 
   function slugId(label, taken) {
     var base = slug(label) || 'group';
@@ -2159,7 +2162,12 @@
     { label: 'Buffer/Misc',            pct: 2,  kind: 'flex',   lo: 1,  hi: 3  },
   ];
 
-  var PLAN_COLOURS = ['#4F6E9A','#B0542C','#3F5A6E','#6E8F5A','#8A5A7A','#A88A2E','#7A7468','#C9A24A'];
+  // One colour per recommended category, not a list to cycle through — with
+  // only eight, the fourteenth group came out the same shade as the sixth.
+  var PLAN_COLOURS = [
+    '#4F6E9A', '#BD7342', '#359735', '#883053', '#32328F', '#888830', '#359097',
+    '#613F2E', '#955CA3', '#335B41', '#B8474F', '#376A25', '#4E335B', '#359769',
+  ];
 
   /** A repeating amount expressed per month, matching the bundle's own rule. */
   function perMonth(rec) {

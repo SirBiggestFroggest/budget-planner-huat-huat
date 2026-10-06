@@ -170,7 +170,7 @@
     return { wrap: wrap, input: input };
   }
 
-  var SWATCHES = ['#4F6E9A', '#B0542C', '#3F5A6E', '#6E8F5A', '#8A5A7A', '#A88A2E', '#7A7468', '#C9A24A'];
+  var SWATCHES = ['#4F6E9A', '#BD7342', '#359735', '#883053', '#32328F', '#888830', '#359097', '#613F2E', '#955CA3', '#335B41', '#B8474F', '#376A25', '#4E335B', '#359769', '#BD428C', '#BD42BD'];
 
   function colourPicker(selected, onPick) {
     var wrap = el('div', 'display:flex;gap:7px;flex-wrap:wrap');
@@ -969,6 +969,32 @@
       list.scrollTop = list.scrollHeight;
     };
     foot.appendChild(addGroup);
+
+    // Eight colours used to be shared between an unlimited number of groups, so
+    // older ledgers have duplicates baked in — two groups the same shade in the
+    // donut and in every bar. Changing the palette cannot reach colours already
+    // stored, so this hands them out again, in order, skipping nothing.
+    var spread = button('Spread the colours');
+    spread.title = 'Give every group a different colour';
+    spread.onclick = function () {
+      var live = model.filter(function (g) {
+        return !g.removed;
+      });
+      live.forEach(function (g, i) {
+        g.color = opts.swatches[i % opts.swatches.length];
+      });
+      paint();
+      var clashes = live.length - new Set(live.map(function (g) { return g.color; })).size;
+      error.textContent =
+        clashes > 0
+          ? 'Recoloured. There are more groups than colours, so ' + clashes +
+            ' still share one — rename or merge a few, or pick for them by hand.'
+          : 'Recoloured — every group now has its own. Save to keep it.';
+      error.style.color = clashes > 0 ? '#A6412B' : '#1F6F63';
+      error.style.display = 'block';
+    };
+    foot.appendChild(spread);
+
     foot.appendChild(el('div', 'flex:1'));
 
     var cancel = button('Cancel');

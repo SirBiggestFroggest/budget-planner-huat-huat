@@ -660,6 +660,21 @@ const edits = [
     with: 'l.jsx("th",{style:{width:"4%"}})',
   },
 
+  {
+    why: 'Eight colours for an unlimited number of groups',
+    // The same eight appeared in four places, so a ledger with more than eight
+    // groups handed two of them the same shade — which is why Food & Drink and
+    // Subscription were the same rust in the donut and in the bars.
+    //
+    // Sixteen now, chosen by farthest-point search in Lab space: the closest
+    // pair is 24.5 apart where about 12 is the point two colours start looking
+    // alike. Every one clears 3:1 against both the cream page and a white card,
+    // and stays at least 16.7 away from the red that means "over budget".
+    find: '["#4F6E9A","#B0542C","#3F5A6E","#6E8F5A","#8A5A7A","#A88A2E","#7A7468","#C9A24A"]',
+    with: '["#4F6E9A","#BD7342","#359735","#883053","#32328F","#888830","#359097","#613F2E","#955CA3","#335B41","#B8474F","#376A25","#4E335B","#359769","#BD428C","#BD42BD"]',
+    count: 2,
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
