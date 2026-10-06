@@ -345,3 +345,86 @@
 .modal-foot {
   z-index: 2;
 }
+
+/* --------------------------------------------------------------------------
+ * Tables that do not fit
+ * --------------------------------------------------------------------------
+ *
+ * `.card.flush` sets `overflow-x: hidden`, so a table wider than its card is
+ * not merely cramped — the overflow is clipped and unreachable. The plan table
+ * measured 648px inside a 606px card, which cut "Remaining" in half and put the
+ * remove button somewhere no pointer could go.
+ *
+ * `display: block` on the table lets it scroll instead. The browser still
+ * generates an anonymous table box around thead and tbody, so the columns stay
+ * aligned with each other; only the outer element changes behaviour.
+ */
+
+.card table.tbl {
+  display: block;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+/* --------------------------------------------------------------------------
+ * Give the wide tables the whole width sooner
+ * --------------------------------------------------------------------------
+ *
+ * The pages set their two columns inline, e.g. `minmax(0,1.7fr) minmax(0,1fr)`,
+ * which only collapsed at 560px. Between a phone and a large desktop that left
+ * a table sharing its row with a side panel and scrolling needlessly. Stacking
+ * at 1024px hands the table the full width on tablets and small laptops, where
+ * it then fits without scrolling at all.
+ */
+
+@media (max-width: 1024px) {
+  .page .grid[style*='grid-template-columns'] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * The plan on a phone
+ * --------------------------------------------------------------------------
+ *
+ * Eight columns will not fit a phone at any width worth reading, and a table
+ * you must scroll sideways to use is barely a table. Progress goes first: it is
+ * the one column that only restates what Actual and Remaining already say, as a
+ * bar. Below 480px the roll-over hint under a planned figure goes too.
+ */
+
+@media (max-width: 720px) {
+  .tbl-budget th:nth-child(5),
+  .tbl-budget td:nth-child(5) {
+    display: none;
+  }
+
+  /* The calendar's rule above gives a header's controls `flex: none`, which is
+     right when they are two arrows and three chips. The plan's header carries a
+     checkbox and three buttons: measured at 496px inside a 342px header, and
+     `flex: none` is `flex: 0 0 auto`, so it refused to shrink and simply hung
+     off the edge — wrapping alone could not help while the box was still
+     allowed to be wider than its parent. Letting it take a full line and
+     shrink is what actually makes it wrap. */
+  .card-head > .row {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 560px) {
+  .card table.tbl th,
+  .card table.tbl td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  /* The figures are what you came for; the colour dot and the second line of a
+     label are not worth a column's width here. */
+  .tbl-budget td:first-child span[style*='border-radius'] {
+    display: none;
+  }
+}

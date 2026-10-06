@@ -593,7 +593,7 @@ const edits = [
     // Two columns rather than replacing Planned: the dollars stay the budget, the
     // percentage is the target to judge them against.
     find: 'l.jsx("th",{style:{width:110},children:"Planned"}),',
-    with: 'l.jsx("th",{style:{width:110},children:"Planned"}),l.jsx("th",{style:{width:118},children:"Target"}),l.jsx("th",{style:{width:96},children:"Type"}),',
+    with: 'l.jsx("th",{style:{width:96},children:"Planned"}),l.jsx("th",{style:{width:100},children:"Target"}),l.jsx("th",{style:{width:82},children:"Type"}),',
   },
   {
     why: 'The target and type cells themselves',
@@ -623,6 +623,33 @@ const edits = [
     // button does not offer to create a second salary over the top of one.
     find: 'l.jsx(V,{title:"Income sources",sub:`${w(s)} in ${se(t)}`})',
     with: 'l.jsx(V,{title:"Income sources",sub:`${w(s)} in ${se(t)}`,right:l.jsx("button",{className:"btn sm",onClick:()=>window.__hh.setupSalary(),children:e.recurring.some(T=>T.kind==="income")?"Edit salary":"＋ Set up salary"})})',
+  },
+
+  // Two added columns pushed the plan table past its card: measured at 648px
+  // inside 606px, and .card.flush clips instead of scrolling, so Remaining was
+  // cut in half and the remove button was unreachable. These trims buy back
+  // 118px; app.css handles whatever is still too wide on a phone.
+  {
+    why: 'Progress column was wider than it needed to be',
+    find: 'l.jsx("th",{style:{width:150},children:"Progress"})',
+    with: 'l.jsx("th",{style:{width:104},children:"Progress"})',
+  },
+  {
+    why: 'Actual column was wider than its figures',
+    find: 'l.jsx("th",{style:{width:90,textAlign:"right"},children:"Actual"})',
+    with: 'l.jsx("th",{style:{width:80,textAlign:"right"},children:"Actual"})',
+  },
+  {
+    why: 'Remaining column was wider than its figures',
+    find: 'l.jsx("th",{style:{width:130,textAlign:"right"},children:"Remaining"})',
+    with: 'l.jsx("th",{style:{width:104,textAlign:"right"},children:"Remaining"})',
+  },
+  {
+    why: 'The plan table needs a name of its own to be treated differently',
+    // Four tables share .tbl; only this one carries eight columns, so only this
+    // one should drop any of them on a narrow screen.
+    find: 'l.jsxs("table",{className:"tbl",children:[l.jsx("thead",{children:l.jsxs("tr",{children:[l.jsx("th",{children:"Category group"})',
+    with: 'l.jsxs("table",{className:"tbl tbl-budget",children:[l.jsx("thead",{children:l.jsxs("tr",{children:[l.jsx("th",{children:"Category group"})',
   },
 
   // --- the logo -----------------------------------------------------------
