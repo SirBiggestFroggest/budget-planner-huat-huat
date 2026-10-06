@@ -92,7 +92,7 @@ function json(body: unknown, status = 200) {
 const MAX_INPUT_CHARS = 60_000;
 const MAX_TURNS = 24;
 
-type Task = 'chat' | 'categorise' | 'summarise' | 'insights';
+type Task = 'chat' | 'categorise' | 'summarise' | 'insights' | 'diagnose';
 
 interface Turn {
   role: 'user' | 'model';
@@ -220,7 +220,9 @@ const MAX_LOOKUPS = 2;
 
 /** A search-grounded call carrying no other tools, because the API will not
  *  accept grounding beside function declarations. */
-async function searchWeb(query: string): Promise<string> {
+async function searchWeb(query: string): Promise<{ text?: string; detail?: string }> {
+  let detail = 'no model was tried';
+
   for (const model of MODELS) {
     try {
       const res = await fetch(endpointFor(model), {
@@ -229,24 +231,39 @@ async function searchWeb(query: string): Promise<string> {
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: query }] }],
           tools: [{ google_search: {} }],
-          generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+          // These models think before answering and the thinking is paid for out
+          // of this budget. 1024 was enough for the thinking and nothing else,
+          // so the candidate came back with no text at all and the search looked
+          // like it had failed. The same trap already cost this project once, in
+          // categorise.
+          generationConfig: { temperature: 0, maxOutputTokens: 4096 },
         }),
       });
+
       if (!res.ok) {
-        console.error('[assistant] search', res.status, 'on', model);
+        detail = `${model}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`;
+        console.error('[assistant] search', detail);
         continue;
       }
+
       const data = await res.json();
-      const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+      const candidate = data?.candidates?.[0];
+      const text: string = (candidate?.content?.parts ?? [])
         .map((x: { text?: string }) => x.text ?? '')
         .join('')
         .trim();
-      if (text) return text;
+
+      if (text) return { text };
+
+      detail = `${model}: empty candidate, finishReason=${candidate?.finishReason ?? 'none'}`;
+      console.error('[assistant] search', detail);
     } catch (err) {
-      console.error('[assistant] search failed on', model, err instanceof Error ? err.message : err);
+      detail = `${model}: ${err instanceof Error ? err.message : String(err)}`;
+      console.error('[assistant] search', detail);
     }
   }
-  return 'The search did not come back with anything. Say so rather than guessing.';
+
+  return { detail };
 }
 
 /** One quote from Finnhub. `c` is the current price, `pc` the previous close. */
@@ -290,7 +307,13 @@ async function getQuote(symbol: string): Promise<Record<string, unknown>> {
 }
 
 async function runLookup(name: string, args: Record<string, unknown>): Promise<unknown> {
-  if (name === 'search_web') return { result: await searchWeb(String(args?.query ?? '')) };
+  if (name === 'search_web') {
+    const r = await searchWeb(String(args?.query ?? ''));
+    // The model is told it failed, not why. The reason is for the logs and the
+    // diagnose task; repeating an HTTP status back to someone asking about a
+    // share price helps nobody.
+    return r.text ? { result: r.text } : { error: 'The search came back with nothing.' };
+  }
   if (name === 'get_quote') return await getQuote(String(args?.symbol ?? ''));
   return { error: 'Unknown lookup.' };
 }
@@ -441,9 +464,26 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Body must be JSON.' }, 400);
   }
 
-  const tasks: Task[] = ['chat', 'categorise', 'summarise', 'insights'];
+  const tasks: Task[] = ['chat', 'categorise', 'summarise', 'insights', 'diagnose'];
   if (!payload || !tasks.includes(payload.task)) {
     return json({ error: `task must be one of: ${tasks.join(', ')}` }, 400);
+  }
+
+  // A task that exercises the two lookups and says exactly what came back.
+  // Read-only, and it reaches nothing a chat could not reach — it exists so a
+  // broken lookup can be diagnosed without hunting through logs, which is how
+  // the thought_signature failure had to be found.
+  if (payload.task === 'diagnose') {
+    const symbol = String((payload as { symbol?: string }).symbol ?? 'AAPL');
+    const query = String((payload as { query?: string }).query ?? 'current price of OCBC shares');
+    const [search, quote] = await Promise.all([searchWeb(query), getQuote(symbol)]);
+    return json({
+      ok: true,
+      models: MODELS,
+      quotesKeySet: Boolean(QUOTES_API_KEY),
+      search: search.text ? { ok: true, sample: search.text.slice(0, 300) } : { ok: false, detail: search.detail },
+      quote,
+    });
   }
 
   const { contents, jsonOnly, useTools } = buildRequest(payload);
