@@ -2159,8 +2159,7 @@
     { label: 'Buffer/Misc',            pct: 2,  kind: 'flex',   lo: 1,  hi: 3  },
   ];
 
-  // Group dots are fills, so these are the palette at full strength.
-  var PLAN_COLOURS = ['#ff7043','#ffab40','#ffd54f','#cddc39','#d43300','#a85e00','#6d7615','#8d6c00'];
+  var PLAN_COLOURS = ['#4F6E9A','#B0542C','#3F5A6E','#6E8F5A','#8A5A7A','#A88A2E','#7A7468','#C9A24A'];
 
   /** A repeating amount expressed per month, matching the bundle's own rule. */
   function perMonth(rec) {
