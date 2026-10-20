@@ -530,3 +530,28 @@
     min-width: 5.5rem;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * The nudge drawer, trapped in the top bar
+ * --------------------------------------------------------------------------
+ *
+ * The reminders popover is rendered inside <header class="topbar">, and the
+ * topbar carries `backdrop-filter: blur(6px)`. A backdrop-filter creates a
+ * containing block for `position: fixed` descendants — so the drawer's scrim
+ * and sheet, both fixed and both meant to span the viewport, resolved against
+ * the topbar instead.
+ *
+ * Measured: with a 66px topbar in an 800px viewport, the sheet came out 65px
+ * tall and 416px wide, pinned inside that strip. That is the whole fault —
+ * a header and a footer with the page showing between them, which reads as a
+ * broken panel rather than a mispositioned one.
+ *
+ * The blur is worth keeping while scrolling, so it is dropped only while a
+ * drawer is actually open inside the bar. With no backdrop-filter there is no
+ * containing block, and fixed goes back to meaning fixed.
+ */
+
+.topbar:has(.scrim) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
