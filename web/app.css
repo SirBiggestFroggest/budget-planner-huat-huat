@@ -305,9 +305,25 @@
  * on their own row instead, and the controls themselves never wrap mid-group.
  */
 
-.card-head {
+/* Only headers that carry a row of controls. Applying this to every .card-head
+ * broke the nudge drawer: its header holds a title, a spacer and a close
+ * button, and the note under the title — "A reminder is a nudge. The money only
+ * moves when one of you moves it." — is long enough that with wrapping allowed
+ * the ✕ dropped to a second row. The header went 85px to 119px and the whole
+ * drawer read as broken.
+ *
+ * `min-width: 0` was the obvious fix and is not one: a wrapping flex container
+ * moves an item to the next line rather than shrinking it, so the title stayed
+ * 343px wide in a 375px header and the button wrapped anyway. The wrap itself
+ * had to go from the headers that never needed it. */
+.card-head:has(> .row) {
   flex-wrap: wrap;
   row-gap: 8px;
+}
+
+/* Long titles shorten rather than shove the controls aside. */
+.card-head > :first-child {
+  min-width: 0;
 }
 
 .card-head > .row {
