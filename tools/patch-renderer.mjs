@@ -897,31 +897,6 @@ const edits = [
   // rather than wrapping a full figure. Everything that maps a position now
   // starts at the gutter instead of the edge: the line, the hover index and the
   // tooltip, or the readings would be offset from the curve they describe.
-  {
-    why: 'consts',
-    find: 'const s=E.useId(),[i,o]=E.useState(null),a=1e3,u=t,h=10;',
-    with: 'const s=E.useId(),[i,o]=E.useState(null),a=1e3,u=t,h=10,G=56;',
-  },
-  {
-    why: 'x scale starts after the gutter',
-    find: 'y=p=>h+p/(e.length-1)*(a-h*2)',
-    with: 'y=p=>G+p/(e.length-1)*(a-G-h)',
-  },
-  {
-    why: 'gridlines, now with their values',
-    find: '[0,.5,1].map(p=>l.jsx("line",{x1:h,x2:a-h,y1:h+p*(u-h*2-14),y2:h+p*(u-h*2-14),stroke:"var(--line-2)",strokeWidth:"1"},p))',
-    with: '[0,.5,1].map(p=>l.jsx("line",{x1:G,x2:a-h,y1:h+p*(u-h*2-14),y2:h+p*(u-h*2-14),stroke:"var(--line-2)",strokeWidth:"1"},p)),[0,.5,1].map(p=>l.jsx("text",{x:G-9,y:h+p*(u-h*2-14)+4,textAnchor:"end",fontSize:13,fill:"var(--ink-3)",children:_n(f+(1-p)*d)},"t"+p))',
-  },
-  {
-    why: 'a click maps to the plot, not the whole svg',
-    find: 'm=Math.round((p.clientX-c.left)/c.width*(e.length-1))',
-    with: 'm=Math.round(((p.clientX-c.left)/c.width*a-G)/(a-G-h)*(e.length-1))',
-  },
-  {
-    why: 'the tooltip follows the shifted line',
-    find: 'left:`calc(${i/(e.length-1)*100}% - 40px)`',
-    with: 'left:`calc(${((G+i/(e.length-1)*(a-G-h))/a*100).toFixed(2)}% - 40px)`',
-  },
 
   {
     why: 'One short card beside two tall ones leaves a hole',
@@ -945,15 +920,24 @@ const edits = [
     find: 'l.jsx(sh,{data:v,color:c>=0?"var(--teal)":"var(--red)"})',
     with: 'l.jsx(sh,{data:v,height:300,color:c>=0?"var(--teal)":"var(--red)"})',
   },
+
   {
-    why: 'More gridlines, now there is room between them',
-    find: '[0,.5,1].map(p=>l.jsx("line",{x1:G',
-    with: '[0,.25,.5,.75,1].map(p=>l.jsx("line",{x1:G',
-  },
-  {
-    why: 'And their labels',
-    find: '[0,.5,1].map(p=>l.jsx("text",{x:G-9',
-    with: '[0,.25,.5,.75,1].map(p=>l.jsx("text",{x:G-9',
+    why: 'The chart neither filled its card nor stayed legible on a phone',
+    // The viewBox is 1000 wide against a height the caller picks, so the chart's
+    // shape is fixed while the card's is not: at 1520x300 those are 3.33 against
+    // 5.07, and preserveAspectRatio meet drew it 1:1 and centred — 260px of
+    // nothing either side. The same rule shrinks everything to a third on a
+    // phone, which would have taken the axis labels to about 4px.
+    //
+    // "none" makes the box the chart at any shape, and the strokes carry
+    // non-scaling-stroke so they keep their weight while it stretches.
+    //
+    // Text cannot be stretched, so the labels, the hover dot and the tooltip are
+    // HTML over the svg. The label gutter is 46 real pixels beside the svg
+    // rather than a share of the viewBox: at 5.6% of a phone it came to 18px for
+    // 32px of text, and the first label was clipped by the edge of the card.
+    find: 'function sh({data:e,height:t=190,color:n="#1F6F63",labels:r}){const s=E.useId(),[i,o]=E.useState(null),a=1e3,u=t,h=10;if(e.length<2)return l.jsx("div",{className:"note",children:"Not enough history yet."});const f=Math.min(...e),d=Math.max(...e)-f||1,y=p=>h+p/(e.length-1)*(a-h*2),v=p=>h+(1-(p-f)/d)*(u-h*2-14),j=e.map((p,c)=>`${c?"L":"M"}${y(c).toFixed(1)},${v(p).toFixed(1)}`).join(" "),N=`${j} L${y(e.length-1).toFixed(1)},${u-h} L${y(0).toFixed(1)},${u-h} Z`;return l.jsxs("div",{style:{position:"relative"},children:[l.jsxs("svg",{viewBox:`0 0 ${a} ${u}`,width:"100%",height:u,role:"img","aria-label":`From ${w(e[0])} to ${w(e[e.length-1])}`,onMouseLeave:()=>o(null),onMouseMove:p=>{const c=p.currentTarget.getBoundingClientRect(),m=Math.round((p.clientX-c.left)/c.width*(e.length-1));o(Math.max(0,Math.min(e.length-1,m)))},children:[l.jsx("defs",{children:l.jsxs("linearGradient",{id:s,x1:"0",y1:"0",x2:"0",y2:"1",children:[l.jsx("stop",{offset:"0%",stopColor:n,stopOpacity:".22"}),l.jsx("stop",{offset:"100%",stopColor:n,stopOpacity:"0"})]})}),[0,.5,1].map(p=>l.jsx("line",{x1:h,x2:a-h,y1:h+p*(u-h*2-14),y2:h+p*(u-h*2-14),stroke:"var(--line-2)",strokeWidth:"1"},p)),l.jsx("path",{d:N,fill:`url(#${s})`}),l.jsx("path",{d:j,fill:"none",stroke:n,strokeWidth:"2.2",strokeLinejoin:"round",strokeLinecap:"round"}),i!==null&&l.jsxs(l.Fragment,{children:[l.jsx("line",{x1:y(i),x2:y(i),y1:h,y2:u-h,stroke:"var(--line)",strokeDasharray:"3 3"}),l.jsx("circle",{cx:y(i),cy:v(e[i]),r:"4.5",fill:n,stroke:"var(--card)",strokeWidth:"2"})]})]}),i!==null&&l.jsxs("div",{className:"num",style:{position:"absolute",top:4,left:`calc(${i/(e.length-1)*100}% - 40px)`,background:"var(--dark)",color:"var(--dark-ink)",fontSize:11,padding:"3px 8px",borderRadius:6,pointerEvents:"none",whiteSpace:"nowrap"},children:[w(e[i]),r!=null&&r[i]?" · "+r[i]:""]})]})}',
+    with: 'function sh({data:e,height:t=190,color:n="#1F6F63",labels:r}){const s=E.useId(),[i,o]=E.useState(null),a=1e3,u=t,h=10,GUT=46;if(e.length<2)return l.jsx("div",{className:"note",children:"Not enough history yet."});const f=Math.min(...e),d=Math.max(...e)-f||1,TICKS=[0,.25,.5,.75,1],gy=p=>h+p*(u-h*2-14),y=p=>6+p/(e.length-1)*(a-12),v=p=>gy(1-(p-f)/d),j=e.map((p,c)=>`${c?"L":"M"}${y(c).toFixed(1)},${v(p).toFixed(1)}`).join(" "),N=`${j} L${y(e.length-1).toFixed(1)},${u-h} L${y(0).toFixed(1)},${u-h} Z`,px=p=>`${(y(p)/a*100).toFixed(3)}%`;return l.jsxs("div",{style:{position:"relative"},children:[TICKS.map(p=>l.jsx("div",{className:"hint num",style:{position:"absolute",left:0,top:gy(p),width:GUT-8,textAlign:"right",transform:"translateY(-50%)",pointerEvents:"none",whiteSpace:"nowrap"},children:_n(f+(1-p)*d)},"L"+p)),l.jsxs("div",{style:{position:"relative",marginLeft:GUT},children:[l.jsxs("svg",{viewBox:`0 0 ${a} ${u}`,width:"100%",height:u,preserveAspectRatio:"none",role:"img","aria-label":`From ${w(e[0])} to ${w(e[e.length-1])}`,style:{display:"block"},onMouseLeave:()=>o(null),onMouseMove:p=>{const c=p.currentTarget.getBoundingClientRect(),m=Math.round((p.clientX-c.left)/c.width*(e.length-1));o(Math.max(0,Math.min(e.length-1,m)))},children:[l.jsx("defs",{children:l.jsxs("linearGradient",{id:s,x1:"0",y1:"0",x2:"0",y2:"1",children:[l.jsx("stop",{offset:"0%",stopColor:n,stopOpacity:".22"}),l.jsx("stop",{offset:"100%",stopColor:n,stopOpacity:"0"})]})}),TICKS.map(p=>l.jsx("line",{x1:0,x2:a,y1:gy(p),y2:gy(p),stroke:"var(--line-2)",strokeWidth:"1",vectorEffect:"non-scaling-stroke"},p)),l.jsx("path",{d:N,fill:`url(#${s})`}),l.jsx("path",{d:j,fill:"none",stroke:n,strokeWidth:"2.2",strokeLinejoin:"round",strokeLinecap:"round",vectorEffect:"non-scaling-stroke"}),i!==null&&l.jsx("line",{x1:y(i),x2:y(i),y1:h,y2:u-h,stroke:"var(--line)",strokeDasharray:"3 3",vectorEffect:"non-scaling-stroke"})]}),i!==null&&l.jsx("div",{style:{position:"absolute",left:px(i),top:v(e[i]),width:9,height:9,marginLeft:-4.5,marginTop:-4.5,borderRadius:"50%",background:n,boxShadow:"0 0 0 2px var(--card)",pointerEvents:"none"}}),i!==null&&l.jsxs("div",{className:"num",style:{position:"absolute",top:4,left:px(i),transform:"translateX(-50%)",background:"var(--dark)",color:"var(--dark-ink)",fontSize:11,padding:"3px 8px",borderRadius:6,pointerEvents:"none",whiteSpace:"nowrap"},children:[w(e[i]),r!=null&&r[i]?" · "+r[i]:""]})]})]})}',
   },
 
   // --- the logo -----------------------------------------------------------
