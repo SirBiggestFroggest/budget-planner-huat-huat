@@ -555,3 +555,21 @@
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/* --------------------------------------------------------------------------
+ * Cards take their own height
+ * --------------------------------------------------------------------------
+ *
+ * `.grid` sets no align-items, so its children default to stretch and every
+ * card in a row grows to match the tallest. On Accounts that meant the chart
+ * card stretching to the height of Summary plus Balance check-up beside it:
+ * measured 517px tall around 264px of content, so 253px of it was nothing at
+ * all, which is the gap in the report.
+ *
+ * Only the page's own top-level rows. The column inside one is itself a .grid
+ * and must keep stacking its cards normally.
+ */
+
+.page > .grid {
+  align-items: start;
+}
