@@ -888,6 +888,41 @@ const edits = [
     with: 'l.jsx("th",{style:{width:"10%",textAlign:"right"},children:"Growth"})',
   },
 
+  // A chart with three gridlines and no numbers on them is a shape, not a
+  // measurement — you can see it rose without knowing from what to what. The
+  // lines sit at fractions 0, .5 and 1 of the plot, which are max, midpoint and
+  // min, so the values are already known; they were simply never drawn.
+  //
+  // _n is the bundle's own compact format, so an axis reads $150k and $1.2M
+  // rather than wrapping a full figure. Everything that maps a position now
+  // starts at the gutter instead of the edge: the line, the hover index and the
+  // tooltip, or the readings would be offset from the curve they describe.
+  {
+    why: 'consts',
+    find: 'const s=E.useId(),[i,o]=E.useState(null),a=1e3,u=t,h=10;',
+    with: 'const s=E.useId(),[i,o]=E.useState(null),a=1e3,u=t,h=10,G=56;',
+  },
+  {
+    why: 'x scale starts after the gutter',
+    find: 'y=p=>h+p/(e.length-1)*(a-h*2)',
+    with: 'y=p=>G+p/(e.length-1)*(a-G-h)',
+  },
+  {
+    why: 'gridlines, now with their values',
+    find: '[0,.5,1].map(p=>l.jsx("line",{x1:h,x2:a-h,y1:h+p*(u-h*2-14),y2:h+p*(u-h*2-14),stroke:"var(--line-2)",strokeWidth:"1"},p))',
+    with: '[0,.5,1].map(p=>l.jsx("line",{x1:G,x2:a-h,y1:h+p*(u-h*2-14),y2:h+p*(u-h*2-14),stroke:"var(--line-2)",strokeWidth:"1"},p)),[0,.5,1].map(p=>l.jsx("text",{x:G-9,y:h+p*(u-h*2-14)+4,textAnchor:"end",fontSize:13,fill:"var(--ink-3)",children:_n(f+(1-p)*d)},"t"+p))',
+  },
+  {
+    why: 'a click maps to the plot, not the whole svg',
+    find: 'm=Math.round((p.clientX-c.left)/c.width*(e.length-1))',
+    with: 'm=Math.round(((p.clientX-c.left)/c.width*a-G)/(a-G-h)*(e.length-1))',
+  },
+  {
+    why: 'the tooltip follows the shifted line',
+    find: 'left:`calc(${i/(e.length-1)*100}% - 40px)`',
+    with: 'left:`calc(${((G+i/(e.length-1)*(a-G-h))/a*100).toFixed(2)}% - 40px)`',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.
