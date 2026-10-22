@@ -923,6 +923,39 @@ const edits = [
     with: 'left:`calc(${((G+i/(e.length-1)*(a-G-h))/a*100).toFixed(2)}% - 40px)`',
   },
 
+  {
+    why: 'One short card beside two tall ones leaves a hole',
+    // Accounts put the chart in a 1.6fr column next to a stack of Summary and
+    // Balance check-up. Whichever way the row aligned it looked wrong: stretched,
+    // the card held 253px of nothing; aligned to the top, the page held it
+    // instead. The chart takes the full width on its own row now, which is what
+    // a figure people actually read deserves.
+    find: 'gridTemplateColumns:"minmax(0,1.6fr) minmax(0,1fr)"},children:[l.jsxs(B,{className:"flush",children:[l.jsx(V,{title:l.jsx("span",{className:"num",children:w(y)})',
+    with: 'gridTemplateColumns:"minmax(0,1fr)"},children:[l.jsxs(B,{className:"flush",children:[l.jsx(V,{title:l.jsx("span",{className:"num",children:w(y)})',
+  },
+  {
+    why: 'Summary and the check-up sit side by side under it',
+    // auto-fit rather than two fixed columns, so they fall back to stacking on a
+    // narrow screen without needing a breakpoint of their own.
+    find: 'l.jsxs("div",{className:"grid",children:[l.jsxs(B,{className:"flush",children:[l.jsx(V,{title:"Summary"',
+    with: 'l.jsxs("div",{className:"grid",style:{gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))"},children:[l.jsxs(B,{className:"flush",children:[l.jsx(V,{title:"Summary"',
+  },
+  {
+    why: 'A full-width chart can afford to be taller',
+    find: 'l.jsx(sh,{data:v,color:c>=0?"var(--teal)":"var(--red)"})',
+    with: 'l.jsx(sh,{data:v,height:300,color:c>=0?"var(--teal)":"var(--red)"})',
+  },
+  {
+    why: 'More gridlines, now there is room between them',
+    find: '[0,.5,1].map(p=>l.jsx("line",{x1:G',
+    with: '[0,.25,.5,.75,1].map(p=>l.jsx("line",{x1:G',
+  },
+  {
+    why: 'And their labels',
+    find: '[0,.5,1].map(p=>l.jsx("text",{x:G-9',
+    with: '[0,.25,.5,.75,1].map(p=>l.jsx("text",{x:G-9',
+  },
+
   // --- the logo -----------------------------------------------------------
   // Both logos were the 🐈 emoji, which Windows renders as an orange tabby —
   // nothing like the app's own black cat.

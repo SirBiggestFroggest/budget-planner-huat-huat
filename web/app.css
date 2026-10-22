@@ -408,7 +408,10 @@
  */
 
 @media (max-width: 1024px) {
-  .page .grid[style*='grid-template-columns'] {
+  /* An auto-fit grid already decides for itself how many columns fit, and it
+     does it against the real width rather than a guessed breakpoint. Forcing it
+     to one column stacked two 478px cards that had room to sit side by side. */
+  .page .grid[style*='grid-template-columns']:not([style*='auto-fit']) {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 }
